@@ -78,6 +78,25 @@ actor VectorStore {
         Set(entries.map(\.documentID))
     }
 
+    /// Inferred dimension of stored embeddings, or nil if empty.
+    /// Used by the app-launch migration to detect when the active
+    /// embedding model has changed and the store needs rebuilding.
+    var currentDimensions: Int? {
+        inferredDimensions ?? entries.first?.embedding.count
+    }
+
+    /// Wipe all entries from memory and disk. Used by the embedding-model
+    /// migration when the active model's output dimension no longer
+    /// matches what's persisted (e.g. switching from a 4096-dim chat-LLM
+    /// hidden state to a 768-dim Nomic embedding).
+    func wipe() throws {
+        entries.removeAll()
+        inferredDimensions = nil
+        if FileManager.default.fileExists(atPath: storageURL.path) {
+            try FileManager.default.removeItem(at: storageURL)
+        }
+    }
+
     // MARK: - Search
 
     /// Find the top-k most similar chunks to a query embedding.

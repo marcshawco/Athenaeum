@@ -14,8 +14,14 @@ final class RAGService {
     private(set) var isIndexing = false
     private(set) var indexingProgress: Double = 0
 
-    /// Role used to generate embeddings. The chat model (Mistral) works well for this.
-    private let embeddingRole: LLMRole = .chat
+    /// Role used to generate embeddings — a dedicated retrieval model
+    /// (Nomic Embed Text v1.5). 768-dim, trained contrastively for similarity.
+    private let embeddingRole: LLMRole = .embedding
+
+    /// Output dimension of the active embedding model. Used by the
+    /// pseudo-embedding fallback when the model isn't loaded, and by
+    /// VectorStore for migration detection.
+    static let embeddingDimension: Int = 768
 
     init(llmService: LLMServiceProtocol, vectorStore: VectorStore) {
         self.llmService = llmService
@@ -81,7 +87,7 @@ final class RAGService {
     // MARK: - Query
 
     func query(_ question: String, maxContext: Int = 5) async throws -> RAGResponse {
-        let queryEmbedding = try await generateEmbedding(for: question)
+        let queryEmbedding = try await generateQueryEmbedding(for: question)
         let results = await retrieveRelevantChunks(queryEmbedding: queryEmbedding, maxContext: maxContext)
 
         guard !results.isEmpty else {
@@ -144,7 +150,7 @@ final class RAGService {
         }
 
         let retrievalQuery = retrievalQuery(for: kbExpandedQuery, history: history)
-        let queryEmbedding = try await generateEmbedding(for: retrievalQuery)
+        let queryEmbedding = try await generateQueryEmbedding(for: retrievalQuery)
         // Hand the caller's live document set to the retriever so orphan
         // chunks from deleted/renamed docs can't poison the prompt.
         let liveIDs: Set<UUID>? = fallbackDocuments.isEmpty
@@ -474,16 +480,35 @@ final class RAGService {
 
     // MARK: - Embedding Generation
 
+    /// Embed text as a *document* to be indexed. Nomic Embed v1.5 needs
+    /// the `search_document:` task prefix to produce useful retrieval vectors.
     private func generateEmbedding(for text: String) async throws -> [Float] {
+        return try await embed(text, kind: .document)
+    }
+
+    /// Embed a search *query*. Same model, different task prefix.
+    private func generateQueryEmbedding(for text: String) async throws -> [Float] {
+        return try await embed(text, kind: .query)
+    }
+
+    private enum EmbeddingKind {
+        case document, query
+        var prefix: String {
+            switch self {
+            case .document: "search_document: "
+            case .query:    "search_query: "
+            }
+        }
+    }
+
+    private func embed(_ text: String, kind: EmbeddingKind) async throws -> [Float] {
+        let prefixed = kind.prefix + text
         do {
-            // Use the chat model in embedding mode via llama.cpp
-            return try await llmService.embed(role: embeddingRole, text: text)
+            return try await llmService.embed(role: embeddingRole, text: prefixed)
         } catch LlamaError.modelNotFound {
-            // Model not installed yet — fall back to pseudo-embedding for dev/testing
-            return pseudoEmbedding(for: text, dimensions: 4096)
+            return pseudoEmbedding(for: text, dimensions: Self.embeddingDimension)
         } catch {
-            // Any other inference error — also fall back so import doesn't fail
-            return pseudoEmbedding(for: text, dimensions: 4096)
+            return pseudoEmbedding(for: text, dimensions: Self.embeddingDimension)
         }
     }
 
@@ -556,8 +581,8 @@ final class RAGService {
             .map { $0 }
     }
 
-    /// Deterministic hash-based pseudo-embedding. Used when no model is installed.
-    /// Dimension matches Mistral 7B hidden size (4096) for future compatibility.
+    /// Deterministic hash-based pseudo-embedding. Used when no model is installed,
+    /// so import doesn't crash before the user downloads the embedder.
     private func pseudoEmbedding(for text: String, dimensions: Int) -> [Float] {
         var embedding = [Float](repeating: 0, count: dimensions)
         let tokens = text.lowercased().split(separator: " ")

@@ -535,6 +535,12 @@ struct ContentView: View {
 
         Task {
             try? await vectorStore.load()
+            // Embedding-model migration: when the active embedder's output
+            // dimension no longer matches what's persisted, the existing
+            // vectors live in a different vector space and similarity is
+            // meaningless. Wipe the store; `indexExistingDocumentsIfNeeded`
+            // will rebuild it with the new embedder.
+            await migrateVectorStoreIfNeeded()
             await reconcileDocumentsWithVault()
             // Re-index any already-processed documents the first time the vector store is empty
             await indexExistingDocumentsIfNeeded(ragService: rag)
@@ -543,6 +549,15 @@ struct ContentView: View {
             await pruneOrphanEmbeddings(ragService: rag)
             await scanDocumentVaultOnLaunch()
         }
+    }
+
+    private func migrateVectorStoreIfNeeded() async {
+        let currentDim = await vectorStore.currentDimensions
+        let targetDim = RAGService.embeddingDimension
+        guard let currentDim, currentDim != targetDim else { return }
+        NSLog("[Athenaeum] Vector store dimension mismatch (\(currentDim) → \(targetDim)). Wiping and re-indexing.")
+        try? await vectorStore.wipe()
+        await showBanner("Embedding model upgraded — re-indexing your library.")
     }
 
     @MainActor

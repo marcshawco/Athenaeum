@@ -3,11 +3,10 @@ import Foundation
 // MARK: - LLM Role Definitions
 
 enum LLMRole: String, CaseIterable, Sendable {
-    case tagger      // Qwen 2.5 7B   — JSON tag extraction & classification
-    case taggerPlus  // Qwen 2.5 14B  — optional sharper tagging (when installed)
-    case chat        // Mistral v0.3  — RAG document chat (default)
-    case chatPlus    // Gemma 3 4B    — optional premium chat (faster + sharper)
-    case vision      // MiniCPM-V     — smart OCR for images / scanned PDFs
+    case tagger     // Qwen 2.5 14B — JSON tag extraction & classification
+    case chat       // Qwen 2.5 14B — RAG document chat (shares Qwen 14B with tagger)
+    case embedding  // Nomic Embed Text v1.5 — purpose-built retrieval embeddings
+    case vision     // MiniCPM-V 2.6 — smart OCR for images / scanned PDFs
 }
 
 // MARK: - Model Descriptor
@@ -20,18 +19,34 @@ struct LLMModelDescriptor: Sendable {
     let quantization: String
 
     static let defaults: [LLMModelDescriptor] = [
+        // Generalist text model — serves BOTH the tagger and chat roles
+        // from a single file on disk and a single context in RAM.
+        // `LocalLLMService.contextForRole` shares the loaded LlamaContext
+        // when two roles point at the same filename, so we don't pay
+        // double memory.
         LLMModelDescriptor(
             role: .tagger,
-            displayName: "Qwen 2.5 7B",
-            filename: "Qwen2.5-7B-Instruct-Q4_K_M.gguf",
-            parameterSize: "7B",
+            displayName: "Qwen 2.5 14B Instruct",
+            filename: "Qwen2.5-14B-Instruct-Q4_K_M.gguf",
+            parameterSize: "14B",
             quantization: "Q4_K_M"
         ),
         LLMModelDescriptor(
             role: .chat,
-            displayName: "Mistral v0.3 7B",
-            filename: "Mistral-7B-Instruct-v0.3-Q4_K_M.gguf",
-            parameterSize: "7B",
+            displayName: "Qwen 2.5 14B Instruct",
+            filename: "Qwen2.5-14B-Instruct-Q4_K_M.gguf",
+            parameterSize: "14B",
+            quantization: "Q4_K_M"
+        ),
+        // Purpose-built retrieval embedding model. 768-dim, trained
+        // contrastively for similarity (unlike chat-LLM hidden states).
+        // Uses `search_document:` / `search_query:` prefix tokens —
+        // applied in RAGService and LocalLLMService.embed.
+        LLMModelDescriptor(
+            role: .embedding,
+            displayName: "Nomic Embed Text v1.5",
+            filename: "nomic-embed-text-v1.5.Q4_K_M.gguf",
+            parameterSize: "137M",
             quantization: "Q4_K_M"
         ),
         LLMModelDescriptor(
@@ -41,34 +56,22 @@ struct LLMModelDescriptor: Sendable {
             parameterSize: "8B",
             quantization: "Q4_K_M"
         ),
-        // Optional premium chat model. Smaller than Mistral 7B and notably
-        // sharper at instruction-following + multilingual content. Users opt
-        // in from Model Status — when present, the chat role uses this
-        // instead of Mistral. Marked as the .chatPlus role so it can
-        // co-exist with Mistral without overwriting it on disk.
-        LLMModelDescriptor(
-            role: .chatPlus,
-            displayName: "Gemma 3 4B Instruct",
-            // Bartowski's newer naming includes the upstream org prefix so
-            // this disambiguates from other Gemma forks.
-            filename: "google_gemma-3-4b-it-Q4_K_M.gguf",
-            parameterSize: "4B",
-            quantization: "Q4_K_M"
-        ),
-        // Optional premium tagger. Same Qwen 2.5 family as the default
-        // tagger but double the parameter count — meaningfully better at
-        // strict-JSON pool selection across the 300-term vocabulary,
-        // which is the difference between getting a resume tagged
-        // "resume" and getting it tagged "tax". When present,
-        // `LocalLLMService.contextForRole(.tagger)` prefers this.
-        LLMModelDescriptor(
-            role: .taggerPlus,
-            displayName: "Qwen 2.5 14B Instruct",
-            filename: "Qwen2.5-14B-Instruct-Q4_K_M.gguf",
-            parameterSize: "14B",
-            quantization: "Q4_K_M"
-        ),
     ]
+
+    /// Distinct descriptors keyed by filename, preserving order. Multiple
+    /// roles can map to the same file (tagger + chat both run on Qwen 14B);
+    /// Model Status uses this list to render one tile per actual download.
+    static var uniqueByFilename: [LLMModelDescriptor] {
+        var seen = Set<String>()
+        return defaults.filter { seen.insert($0.filename).inserted }
+    }
+
+    /// All roles served by a given filename. Lets the UI describe a single
+    /// tile in terms of every job it covers ("tagger + chat" instead of
+    /// just "tagger").
+    static func roles(forFilename filename: String) -> [LLMRole] {
+        defaults.filter { $0.filename == filename }.map(\.role)
+    }
 }
 
 // MARK: - LLM Service Protocol
@@ -205,13 +208,24 @@ final class LocalLLMService: LLMServiceProtocol, @unchecked Sendable {
             try await vc.load()
             lock.withLock { visionContext = vc }
         } else {
-            let cfg: LlamaInferenceConfig = (descriptor.role == .tagger || descriptor.role == .taggerPlus) ? .tagging : .chat
+            let cfg: LlamaInferenceConfig = loadConfig(for: descriptor.role)
             let ctx = LlamaContext(descriptor: descriptor, modelPath: path, config: cfg)
             try await ctx.load()
             lock.withLock { contexts[descriptor.role] = ctx }
         }
 
         await MainActor.run { () -> Void in modelManager.loadedModels.insert(descriptor.role) }
+    }
+
+    /// Load-time inference config (context size, GPU layers, batch size).
+    /// Per-call sampling overrides live in `generationConfig(for:)`.
+    private func loadConfig(for role: LLMRole) -> LlamaInferenceConfig {
+        switch role {
+        case .tagger:    .tagging
+        case .chat:      .chat
+        case .embedding: .embedding
+        case .vision:    .ocr
+        }
     }
 
     func unloadModel(_ role: LLMRole) async {
@@ -278,52 +292,49 @@ final class LocalLLMService: LLMServiceProtocol, @unchecked Sendable {
     }
 
     func embed(role: LLMRole, text: String) async throws -> [Float] {
+        // RAGService prepends Nomic's task prefix ("search_document: " or
+        // "search_query: "). If a stray caller forgot, default to the
+        // document prefix so we never embed bare text against this model.
         let ctx = try await contextForRole(role)
-        return try await ctx.embed(text)
+        let prepared: String = {
+            guard role == .embedding else { return text }
+            if text.hasPrefix("search_document:") || text.hasPrefix("search_query:") {
+                return text
+            }
+            return "search_document: " + text
+        }()
+        return try await ctx.embed(prepared)
     }
 
     // MARK: - Context Management
 
     private func generationConfig(for role: LLMRole) -> LlamaInferenceConfig {
         switch role {
-        case .tagger:      .tagging
-        case .taggerPlus:  .tagging
-        case .chat:        .chat
-        case .chatPlus:    .chat
-        case .vision:      .ocr
+        case .tagger:    .tagging
+        case .chat:      .chat
+        case .embedding: .embedding
+        case .vision:    .ocr
         }
     }
 
     private func contextForRole(_ role: LLMRole) async throws -> LlamaContext {
-        // When the caller asks for .chat or .tagger, prefer the matching
-        // optional "plus" model if it's installed. Same pattern for both:
-        // Mistral → Gemma for chat, Qwen 7B → Qwen 14B for tagging.
-        // Users opt in by downloading the bundle; nothing to flip.
-        let effectiveRole: LLMRole = {
-            switch role {
-            case .chat:
-                if let plus = LLMModelDescriptor.defaults.first(where: { $0.role == .chatPlus }),
-                   isModelAvailable(plus) {
-                    return .chatPlus
-                }
-            case .tagger:
-                if let plus = LLMModelDescriptor.defaults.first(where: { $0.role == .taggerPlus }),
-                   isModelAvailable(plus) {
-                    return .taggerPlus
-                }
-            default:
-                break
-            }
-            return role
-        }()
+        // Return cached context if already loaded for this role.
+        if let ctx = lock.withLock({ contexts[role] }) { return ctx }
 
-        // Return cached context if already loaded
-        if let ctx = lock.withLock({ contexts[effectiveRole] }) { return ctx }
-
-        // Auto-load if model is available on disk
-        guard let descriptor = LLMModelDescriptor.defaults.first(where: { $0.role == effectiveRole }) else {
-            throw LlamaError.modelNotFound("No descriptor for role \(effectiveRole.rawValue)")
+        guard let descriptor = LLMModelDescriptor.defaults.first(where: { $0.role == role }) else {
+            throw LlamaError.modelNotFound("No descriptor for role \(role.rawValue)")
         }
+
+        // Share contexts across roles that point at the same model file.
+        // Tagger and chat both resolve to Qwen 14B — loading the same weights
+        // twice would cost ~5 GB extra in RAM. When any role with a matching
+        // filename is already loaded, route this role to that context.
+        if let shared = lock.withLock({ sharedContextLocked(for: descriptor.filename) }) {
+            lock.withLock { contexts[role] = shared }
+            await MainActor.run { () -> Void in modelManager.loadedModels.insert(role) }
+            return shared
+        }
+
         guard isModelAvailable(descriptor) else {
             throw LlamaError.modelNotFound(
                 "\(descriptor.displayName) not installed. Download it from Model Status."
@@ -332,10 +343,23 @@ final class LocalLLMService: LLMServiceProtocol, @unchecked Sendable {
 
         try await loadModel(descriptor)
 
-        guard let ctx = lock.withLock({ contexts[effectiveRole] }) else {
+        guard let ctx = lock.withLock({ contexts[role] }) else {
             throw LlamaError.failedToLoad
         }
         return ctx
+    }
+
+    /// Find any already-loaded context whose role descriptor has the given
+    /// filename. Caller must hold `lock`. Returns nil if no role with this
+    /// filename is currently loaded.
+    private func sharedContextLocked(for filename: String) -> LlamaContext? {
+        for (loadedRole, ctx) in contexts {
+            if let d = LLMModelDescriptor.defaults.first(where: { $0.role == loadedRole }),
+               d.filename == filename {
+                return ctx
+            }
+        }
+        return nil
     }
 }
 
