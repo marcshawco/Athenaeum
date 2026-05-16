@@ -460,7 +460,9 @@ final class DocumentProcessor {
         // offline-rules classifier as a minimum-effort fallback so the
         // document doesn't end up entirely tag-less.
         let autoTagEnabled = UserDefaults.standard.object(forKey: "autoTagEnabled") as? Bool ?? true
+        NSLog("[Athenaeum] classifyAndTag start file=\(document.originalFilename) autoTagEnabled=\(autoTagEnabled) textLen=\(text.count)")
         guard autoTagEnabled else {
+            NSLog("[Athenaeum] autoTagEnabled=false → routing through OfflineDocumentClassifier (the toggle is OFF in Settings → General)")
             let fallback = OfflineDocumentClassifier.classify(
                 text: text,
                 filename: document.originalFilename,
@@ -475,6 +477,7 @@ final class DocumentProcessor {
         let existingTags = (try? modelContext.fetch(fetchDescriptor))?.map(\.name) ?? []
 
         let prompt = TaggingPrompts.classifyDocument(text: text, existingTags: existingTags)
+        NSLog("[Athenaeum] Tagger prompt length=\(prompt.count) chars (~\(prompt.count / 4) tokens). Calling Qwen 14B…")
         do {
             let response = try await llmService.generate(
                 role: .tagger,
@@ -482,19 +485,22 @@ final class DocumentProcessor {
                 maxTokens: 768,
                 temperature: 0.1
             )
+            NSLog("[Athenaeum] Tagger raw response (len=\(response.count)): \(response.prefix(400))")
             if let parsed = parseClassification(response) {
+                NSLog("[Athenaeum] Tagger parsed OK. Raw tags=\(parsed.tags). documentType=\(parsed.documentType ?? "nil")")
                 let classification = ensureUsefulTags(
                     parsed,
                     fallback: emptyClassification,
                     existingTagNames: existingTags
                 )
+                NSLog("[Athenaeum] Tagger final tags after validation=\(classification.tags)")
                 applyClassification(classification, to: document)
             } else {
                 // LLM ran but produced unparseable output. Don't poison
                 // the document with offline-keyword tags — leave it
                 // explicitly marked "to-review" so the user knows it
                 // needs another pass. Better silent gap than wrong data.
-                NSLog("[Athenaeum] Tagger returned unparseable JSON for \(document.originalFilename). Marking to-review. Raw response prefix: \(response.prefix(200))")
+                NSLog("[Athenaeum] Tagger returned UNPARSEABLE JSON for \(document.originalFilename). Marking to-review.")
                 applyClassification(
                     DocumentClassification(
                         title: nil, tags: ["to-review"],
@@ -505,7 +511,7 @@ final class DocumentProcessor {
                 )
             }
         } catch {
-            NSLog("[Athenaeum] Tagger threw for \(document.originalFilename): \(error.localizedDescription). Marking to-review.")
+            NSLog("[Athenaeum] Tagger THREW for \(document.originalFilename): \(error.localizedDescription). Marking to-review.")
             applyClassification(
                 DocumentClassification(
                     title: nil, tags: ["to-review"],
