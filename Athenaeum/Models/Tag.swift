@@ -86,10 +86,16 @@ extension Tag {
         // Operations / logistics
         "inventory", "shipping", "delivery", "packing-slip", "bill-of-lading", "order", "fulfillment",
         "return", "rma", "procurement", "manufacturing", "operations",
-        // Retail / hospitality / service industry
+        // Retail / hospitality / service industry / fashion
         "retail", "merchandising", "store-operations", "point-of-sale", "ecommerce",
         "hospitality", "hotel-operations", "front-desk", "concierge", "housekeeping",
         "restaurant", "food-service", "menu", "kitchen-operations",
+        "fashion", "apparel", "luxury", "streetwear", "footwear", "accessories",
+        // Food / cooking / nutrition / wellness / fitness
+        "recipe", "ingredients", "cooking", "baking", "meal-plan", "meal-prep",
+        "dessert", "entree", "appetizer", "beverage", "snack", "dietary-restrictions",
+        "nutrition", "protein", "supplement", "calories", "macros",
+        "health", "wellness", "fitness", "workout", "exercise", "diet", "weight-loss",
         // Security / safety
         "compliance", "procedure", "standard-operating-procedure", "audit", "safety", "incident",
         "security", "loss-prevention", "asset-protection", "investigation", "surveillance",
