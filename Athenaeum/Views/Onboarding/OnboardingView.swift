@@ -137,7 +137,7 @@ struct OnboardingView: View {
                 ModelInfoRow(
                     name: "Nomic Embed v1.5",
                     role: "Retrieval Embeddings",
-                    size: "~0.3 GB",
+                    size: "~84 MB",
                     color: Japandi.Colors.warmFallback
                 )
                 ModelInfoRow(

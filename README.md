@@ -63,7 +63,7 @@ The catalog is "best in class for the job" — no optional tiers, no second-stri
 | File | Roles | Purpose |
 | --- | --- | --- |
 | `Qwen2.5-14B-Instruct-Q4_K_M.gguf` (~9 GB) | Tagger + Chat | Strict-JSON document classification (300-term controlled vocabulary, 500-type taxonomy) and RAG document chat. One file, two roles, one in-RAM context — `LocalLLMService.contextForRole` dedupes by filename. |
-| `nomic-embed-text-v1.5.Q4_K_M.gguf` (~280 MB) | Embedding | Purpose-built retrieval embeddings (768-dim, contrastively trained). RAGService injects the model's required `search_document:` / `search_query:` task prefixes. |
+| `nomic-embed-text-v1.5.Q4_K_M.gguf` (~84 MB) | Embedding | Purpose-built retrieval embeddings (768-dim, contrastively trained). RAGService injects the model's required `search_document:` / `search_query:` task prefixes. |
 | `ggml-model-Q4_K_M.gguf` (~5 GB) | Vision | MiniCPM-V 2.6 — enhanced OCR for scanned PDFs and photographed receipts when Apple Vision alone isn't enough. |
 
 Models can be downloaded from the app's Model Status screen. Document import still works without models installed; Athenaeum falls back to native text extraction, Apple Vision OCR, and a rule-based offline classifier where possible.

@@ -65,14 +65,16 @@ final class ModelDownloader {
                 expectedSize: 9_000_000_000
             ),
             // Purpose-built retrieval embedding model. Tiny next to the
-            // text generalist (~280 MB) and trained contrastively for
+            // text generalist (~84 MB) and trained contrastively for
             // similarity — strictly better than recycling a chat LLM's
-            // hidden state.
+            // hidden state. (Real file is 84,106,624 bytes; the 75 %
+            // integrity check in `urlSession(_:downloadTask:didFinishDownloadingTo:)`
+            // rejected an inflated estimate as "too small to be valid".)
             HFModelInfo(
                 role: .embedding,
                 repoID: "nomic-ai/nomic-embed-text-v1.5-GGUF",
                 filename: "nomic-embed-text-v1.5.Q4_K_M.gguf",
-                expectedSize: 280_000_000
+                expectedSize: 84_000_000
             ),
             HFModelInfo(
                 role: .vision,
