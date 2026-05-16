@@ -460,9 +460,9 @@ final class DocumentProcessor {
         // offline-rules classifier as a minimum-effort fallback so the
         // document doesn't end up entirely tag-less.
         let autoTagEnabled = UserDefaults.standard.object(forKey: "autoTagEnabled") as? Bool ?? true
-        NSLog("[Athenaeum] classifyAndTag start file=\(document.originalFilename) autoTagEnabled=\(autoTagEnabled) textLen=\(text.count)")
+        tlog("classifyAndTag START file=\(document.originalFilename) autoTagEnabled=\(autoTagEnabled) textLen=\(text.count)")
         guard autoTagEnabled else {
-            NSLog("[Athenaeum] autoTagEnabled=false → routing through OfflineDocumentClassifier (the toggle is OFF in Settings → General)")
+            tlog("autoTagEnabled=false → routing through OfflineDocumentClassifier (toggle is OFF in Settings → General)")
             let fallback = OfflineDocumentClassifier.classify(
                 text: text,
                 filename: document.originalFilename,
@@ -477,7 +477,7 @@ final class DocumentProcessor {
         let existingTags = (try? modelContext.fetch(fetchDescriptor))?.map(\.name) ?? []
 
         let prompt = TaggingPrompts.classifyDocument(text: text, existingTags: existingTags)
-        NSLog("[Athenaeum] Tagger prompt length=\(prompt.count) chars (~\(prompt.count / 4) tokens). Calling Qwen 14B…")
+        tlog("Tagger PROMPT len=\(prompt.count) chars (~\(prompt.count / 4) tokens). Calling Qwen 14B…")
         do {
             let response = try await llmService.generate(
                 role: .tagger,
@@ -485,22 +485,23 @@ final class DocumentProcessor {
                 maxTokens: 768,
                 temperature: 0.1
             )
-            NSLog("[Athenaeum] Tagger raw response (len=\(response.count)): \(response.prefix(400))")
+            tlog("Tagger RAW response len=\(response.count). First 800 chars follow ↓")
+            tlog(String(response.prefix(800)))
             if let parsed = parseClassification(response) {
-                NSLog("[Athenaeum] Tagger parsed OK. Raw tags=\(parsed.tags). documentType=\(parsed.documentType ?? "nil")")
+                tlog("Tagger PARSED OK. raw_tags=\(parsed.tags) doc_type=\(parsed.documentType ?? "nil") category=\(parsed.category ?? "nil")")
                 let classification = ensureUsefulTags(
                     parsed,
                     fallback: emptyClassification,
                     existingTagNames: existingTags
                 )
-                NSLog("[Athenaeum] Tagger final tags after validation=\(classification.tags)")
+                tlog("Tagger FINAL tags after validation=\(classification.tags)")
                 applyClassification(classification, to: document)
             } else {
                 // LLM ran but produced unparseable output. Don't poison
                 // the document with offline-keyword tags — leave it
                 // explicitly marked "to-review" so the user knows it
                 // needs another pass. Better silent gap than wrong data.
-                NSLog("[Athenaeum] Tagger returned UNPARSEABLE JSON for \(document.originalFilename). Marking to-review.")
+                tlog("Tagger UNPARSEABLE JSON for \(document.originalFilename). Marking to-review.")
                 applyClassification(
                     DocumentClassification(
                         title: nil, tags: ["to-review"],
@@ -511,7 +512,7 @@ final class DocumentProcessor {
                 )
             }
         } catch {
-            NSLog("[Athenaeum] Tagger THREW for \(document.originalFilename): \(error.localizedDescription). Marking to-review.")
+            tlog("Tagger THREW for \(document.originalFilename): \(error.localizedDescription). Marking to-review.")
             applyClassification(
                 DocumentClassification(
                     title: nil, tags: ["to-review"],
@@ -723,4 +724,53 @@ private extension String {
         let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
     }
+}
+
+// MARK: - Tagger Log
+//
+// Writes a permanent log of every tagging attempt to
+// `~/Library/Containers/<bundle-id>/Data/Library/Application Support/Athenaeum/tagger.log`
+// (or the equivalent unsandboxed path). Survives across launches and
+// doesn't depend on Console.app's filtering. Console.app + NSLog can
+// hide Info-level messages by default; a plain text file always works.
+//
+// Mirrored from every `tlog(...)` call alongside the existing NSLog so
+// you can use either Console, `log stream`, or just open the file.
+
+enum TaggerLog {
+    private static let formatter: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+
+    static var logFileURL: URL {
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let dir = appSupport.appendingPathComponent("Athenaeum", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appendingPathComponent("tagger.log")
+    }
+
+    static func append(_ message: String) {
+        let line = "[\(formatter.string(from: Date()))] \(message)\n"
+        guard let data = line.data(using: .utf8) else { return }
+        let url = logFileURL
+        if FileManager.default.fileExists(atPath: url.path) {
+            if let handle = try? FileHandle(forWritingTo: url) {
+                defer { try? handle.close() }
+                try? handle.seekToEnd()
+                try? handle.write(contentsOf: data)
+            }
+        } else {
+            try? data.write(to: url)
+        }
+    }
+}
+
+/// Tagger log helper — writes to both NSLog (so Console.app / `log stream`
+/// catch it) and the on-disk tagger.log file (so logs survive without any
+/// log-viewer gymnastics).
+func tlog(_ message: String) {
+    NSLog("[Athenaeum] %@", message)
+    TaggerLog.append(message)
 }
