@@ -556,6 +556,17 @@ struct SettingsView: View {
                 presetButton(.powerUser)
                 presetButton(.custom)
             }
+
+            HStack(alignment: .top, spacing: 6) {
+                Image(systemName: "info.circle")
+                    .font(.system(size: 10))
+                    .foregroundStyle(Japandi.Colors.textTertiaryFB)
+                    .padding(.top, 2)
+                Text("Presets change context window, GPU layers, chunk size, chunk overlap, and the RAG top-K (how many sources chat retrieves). New chats + new imports use the new values immediately. To re-chunk existing documents with the new settings, run Settings ▸ Storage ▸ Rebuild Vector Index.")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(Japandi.Colors.textTertiaryFB)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .padding(Japandi.Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -612,12 +623,15 @@ struct SettingsView: View {
         .buttonStyle(.plain)
     }
 
+    @AppStorage("ragTopK") private var ragTopK: Int = 6
+
     private func apply(_ preset: SettingsPreset) {
         guard let values = preset.values else { return }
         contextSize  = values.contextSize
         maxGPULayers = values.gpuLayers
         chunkSize    = values.chunkSize
         chunkOverlap = values.chunkOverlap
+        ragTopK      = values.ragTopK
     }
 
     private func matchesCurrentSettings(_ preset: SettingsPreset) -> Bool {
@@ -626,6 +640,7 @@ struct SettingsView: View {
             && v.gpuLayers == maxGPULayers
             && v.chunkSize == chunkSize
             && v.chunkOverlap == chunkOverlap
+            && v.ragTopK == ragTopK
     }
 
     // MARK: - Storage
@@ -924,6 +939,9 @@ enum SettingsPreset: String, CaseIterable, Hashable {
         let gpuLayers: Int     // -1 = all (Metal full offload), 0 = CPU-only
         let chunkSize: Int
         let chunkOverlap: Int
+        /// RAG top-K — how many retrieved chunks the chat surfaces per turn.
+        /// More chunks = more context fed to the LLM, at the cost of tokens.
+        let ragTopK: Int
     }
 
     var title: String {
@@ -953,9 +971,9 @@ enum SettingsPreset: String, CaseIterable, Hashable {
     var values: Values? {
         switch self {
         case .everyday:
-            return Values(contextSize: 4096, gpuLayers: -1, chunkSize: 512, chunkOverlap: 64)
+            return Values(contextSize: 4096, gpuLayers: -1, chunkSize: 512, chunkOverlap: 64, ragTopK: 6)
         case .powerUser:
-            return Values(contextSize: 8192, gpuLayers: -1, chunkSize: 768, chunkOverlap: 128)
+            return Values(contextSize: 8192, gpuLayers: -1, chunkSize: 768, chunkOverlap: 128, ragTopK: 10)
         case .custom:
             return nil
         }

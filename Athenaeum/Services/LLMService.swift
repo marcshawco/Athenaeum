@@ -48,7 +48,9 @@ struct LLMModelDescriptor: Sendable {
         LLMModelDescriptor(
             role: .chatPlus,
             displayName: "Gemma 3 4B Instruct",
-            filename: "gemma-3-4b-it-Q4_K_M.gguf",
+            // Bartowski's newer naming includes the upstream org prefix so
+            // this disambiguates from other Gemma forks.
+            filename: "google_gemma-3-4b-it-Q4_K_M.gguf",
             parameterSize: "4B",
             quantization: "Q4_K_M"
         ),

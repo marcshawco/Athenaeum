@@ -430,10 +430,14 @@ struct ChatView: View {
 
             do {
                 await repairIndexIfNeeded()
+                // Honor the user's preset / Custom RAG top-K setting.
+                // Falls back to 6 when the AppStorage key is unset.
+                let stored = UserDefaults.standard.integer(forKey: "ragTopK")
+                let topK = stored > 0 ? stored : 6
                 let (stream, sources) = try await ragService.queryStream(
                     text,
                     history: history,
-                    maxContext: 8,
+                    maxContext: topK,
                     fallbackDocuments: fallbackDocuments,
                     knowledgeBase: knowledgeBase
                 )

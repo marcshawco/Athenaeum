@@ -74,8 +74,10 @@ final class ModelDownloader {
             // `LocalLLMService.contextForRole(.chat)` prefers it.
             HFModelInfo(
                 role: .chatPlus,
-                repoID: "bartowski/gemma-3-4b-it-GGUF",
-                filename: "gemma-3-4b-it-Q4_K_M.gguf",
+                // Bartowski's Gemma 3 quants live under the
+                // google_ org-prefixed repo+filename convention.
+                repoID: "bartowski/google_gemma-3-4b-it-GGUF",
+                filename: "google_gemma-3-4b-it-Q4_K_M.gguf",
                 expectedSize: 2_600_000_000
             ),
         ]

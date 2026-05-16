@@ -15,6 +15,20 @@ struct DocumentGridView: View {
     @State private var viewMode: ViewMode = .grid
     @State private var showBatchTagSheet = false
     @State private var newBatchTag = ""
+
+    /// Anchor for shift-click range selection. Holds the document the user
+    /// clicked *without* shift; the next shift-click selects the inclusive
+    /// range between this anchor and the clicked document in display order.
+    @State private var selectionAnchorID: UUID?
+
+    /// Marquee (drag-rectangle) selection state.
+    @State private var marqueeStart: CGPoint?
+    @State private var marqueeCurrent: CGPoint?
+    /// Frames of every visible card in grid coordinates, captured via a
+    /// PreferenceKey. Lets the marquee figure out which cards it overlaps
+    /// without coupling it to the LazyVGrid layout math.
+    @State private var cardFrames: [UUID: CGRect] = [:]
+    @State private var preMarqueeSelection: Set<Document> = []
     @AppStorage("defaultViewMode") private var defaultViewMode = ViewMode.grid.rawValue
     @Environment(\.modelContext) private var modelContext
 
@@ -155,47 +169,163 @@ struct DocumentGridView: View {
 
     private var gridContent: some View {
         ScrollView {
-            LazyVGrid(
-                columns: [GridItem(.adaptive(minimum: 210, maximum: 260), spacing: Japandi.Spacing.lg)],
-                spacing: Japandi.Spacing.lg
-            ) {
-                ForEach(filteredDocuments) { document in
-                    let isItemSelected = selectedDocuments.contains(document)
-                    DocumentCardView(
-                        document: document,
-                        isSelected: selectedDocument?.id == document.id || isItemSelected
-                    )
-                    .documentContextMenu(document: document)
-                    .onTapGesture {
-                        if NSEvent.modifierFlags.contains(.command) {
-                            if isItemSelected {
-                                selectedDocuments.remove(document)
-                                if selectedDocument?.id == document.id {
-                                    selectedDocument = selectedDocuments.first
-                                }
-                            } else {
-                                selectedDocuments.insert(document)
-                                selectedDocument = document
-                            }
-                        } else {
-                            selectedDocuments.removeAll()
-                            selectedDocument = document
-                        }
-                    }
-                    .overlay(alignment: .topTrailing) {
-                        if isItemSelected {
-                            Image(systemName: "checkmark.circle.fill")
-                                .font(.system(size: 16))
-                                .foregroundStyle(Japandi.Colors.accentFallback)
-                                .background(Japandi.Colors.surfaceRaisedFB.clipShape(Circle()))
-                                .padding(Japandi.Spacing.xs)
-                        }
+            ZStack(alignment: .topLeading) {
+                LazyVGrid(
+                    columns: [GridItem(.adaptive(minimum: 210, maximum: 260), spacing: Japandi.Spacing.lg)],
+                    spacing: Japandi.Spacing.lg
+                ) {
+                    ForEach(filteredDocuments) { document in
+                        cardCell(for: document)
                     }
                 }
+                .padding(.horizontal, Japandi.Spacing.lg)
+                .padding(.vertical, Japandi.Spacing.lg)
+                .coordinateSpace(name: "grid")
+
+                // Marquee rectangle drawn in the grid's coordinate space.
+                if let rect = marqueeRect {
+                    Rectangle()
+                        .fill(Japandi.Colors.accentFallback.opacity(0.10))
+                        .frame(width: rect.width, height: rect.height)
+                        .overlay(
+                            Rectangle()
+                                .strokeBorder(Japandi.Colors.accentFallback.opacity(0.55), lineWidth: 0.75)
+                        )
+                        .offset(x: rect.minX, y: rect.minY)
+                        .allowsHitTesting(false)
+                }
             }
-            .padding(.horizontal, Japandi.Spacing.lg)
-            .padding(.vertical, Japandi.Spacing.lg)
+            .coordinateSpace(name: "grid")
+            // The background catches drag gestures that start on empty
+            // space between cards so the marquee actually fires.
+            .background(
+                Color.clear
+                    .contentShape(Rectangle())
+                    .gesture(marqueeGesture)
+                    .onTapGesture {
+                        // Click on empty space — clear multi-selection.
+                        if !selectedDocuments.isEmpty {
+                            selectedDocuments.removeAll()
+                        }
+                    }
+            )
+            .onPreferenceChange(CardFramePreferenceKey.self) { frames in
+                cardFrames = frames
+            }
         }
+    }
+
+    /// One grid cell. Owns its tap/shift-click handling and reports its
+    /// frame into the marquee tracking dictionary via PreferenceKey.
+    @ViewBuilder
+    private func cardCell(for document: Document) -> some View {
+        let isItemSelected = selectedDocuments.contains(document)
+        DocumentCardView(
+            document: document,
+            isSelected: selectedDocument?.id == document.id || isItemSelected
+        )
+        .documentContextMenu(document: document)
+        .background(
+            GeometryReader { proxy in
+                Color.clear.preference(
+                    key: CardFramePreferenceKey.self,
+                    value: [document.id: proxy.frame(in: .named("grid"))]
+                )
+            }
+        )
+        .onTapGesture {
+            handleClick(on: document)
+        }
+        .overlay(alignment: .topTrailing) {
+            if isItemSelected {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 16))
+                    .foregroundStyle(Japandi.Colors.accentFallback)
+                    .background(Japandi.Colors.surfaceRaisedFB.clipShape(Circle()))
+                    .padding(Japandi.Spacing.xs)
+            }
+        }
+    }
+
+    /// Modifier-aware click handler:
+    ///   - Cmd-click: toggle this doc's membership in the selection.
+    ///   - Shift-click: select the inclusive range between the anchor and
+    ///     this doc in current display order.
+    ///   - Plain click: clear multi-selection, pin this doc as the
+    ///     inspector target + the new anchor.
+    private func handleClick(on document: Document) {
+        let mods = NSEvent.modifierFlags
+        if mods.contains(.command) {
+            if selectedDocuments.contains(document) {
+                selectedDocuments.remove(document)
+                if selectedDocument?.id == document.id {
+                    selectedDocument = selectedDocuments.first
+                }
+            } else {
+                selectedDocuments.insert(document)
+                selectedDocument = document
+                selectionAnchorID = document.id
+            }
+            return
+        }
+        if mods.contains(.shift),
+           let anchorID = selectionAnchorID,
+           let anchorIdx = filteredDocuments.firstIndex(where: { $0.id == anchorID }),
+           let clickIdx = filteredDocuments.firstIndex(where: { $0.id == document.id }) {
+            let lower = min(anchorIdx, clickIdx)
+            let upper = max(anchorIdx, clickIdx)
+            selectedDocuments.formUnion(filteredDocuments[lower...upper])
+            selectedDocument = document
+            return
+        }
+        selectedDocuments.removeAll()
+        selectedDocument = document
+        selectionAnchorID = document.id
+    }
+
+    /// Current marquee rectangle in grid coordinates, or nil if not dragging.
+    private var marqueeRect: CGRect? {
+        guard let start = marqueeStart, let current = marqueeCurrent else { return nil }
+        return CGRect(
+            x: min(start.x, current.x),
+            y: min(start.y, current.y),
+            width: abs(current.x - start.x),
+            height: abs(current.y - start.y)
+        )
+    }
+
+    /// Drag gesture wired to the background of the grid. As the rectangle
+    /// grows we recompute which card frames it overlaps and union them with
+    /// the selection that was in place before the drag began (so you can
+    /// hold cmd while dragging to *add* a marquee group).
+    private var marqueeGesture: some Gesture {
+        DragGesture(minimumDistance: 6, coordinateSpace: .named("grid"))
+            .onChanged { value in
+                if marqueeStart == nil {
+                    marqueeStart = value.startLocation
+                    let isAdditive = NSEvent.modifierFlags.contains(.command)
+                        || NSEvent.modifierFlags.contains(.shift)
+                    preMarqueeSelection = isAdditive ? selectedDocuments : []
+                }
+                marqueeCurrent = value.location
+                guard let rect = marqueeRect else { return }
+                var newSelection = preMarqueeSelection
+                for doc in filteredDocuments {
+                    if let frame = cardFrames[doc.id], frame.intersects(rect) {
+                        newSelection.insert(doc)
+                    }
+                }
+                selectedDocuments = newSelection
+            }
+            .onEnded { _ in
+                marqueeStart = nil
+                marqueeCurrent = nil
+                preMarqueeSelection = []
+                if let first = selectedDocuments.first {
+                    selectedDocument = first
+                    selectionAnchorID = first.id
+                }
+            }
     }
 
     // MARK: - List
@@ -579,5 +709,20 @@ private extension String {
     var nilIfBlank: String? {
         let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
+    }
+}
+
+// MARK: - Card frame tracking
+//
+// PreferenceKey that lets every card register its own frame in the grid's
+// coordinate space. The grid reads these once per layout pass via
+// `.onPreferenceChange` and the marquee drag intersects against them.
+
+struct CardFramePreferenceKey: PreferenceKey {
+    static var defaultValue: [UUID: CGRect] { [:] }
+
+    static func reduce(value: inout [UUID: CGRect], nextValue: () -> [UUID: CGRect]) {
+        // Each card contributes its own (id, frame) pair — just merge.
+        value.merge(nextValue(), uniquingKeysWith: { $1 })
     }
 }
