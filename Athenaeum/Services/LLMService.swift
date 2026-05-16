@@ -3,10 +3,11 @@ import Foundation
 // MARK: - LLM Role Definitions
 
 enum LLMRole: String, CaseIterable, Sendable {
-    case tagger    // Qwen 2.5       — JSON tag extraction & classification
-    case chat      // Mistral v0.3   — RAG document chat (default)
-    case chatPlus  // Gemma 3 4B     — optional premium chat (faster + sharper)
-    case vision    // MiniCPM-V      — smart OCR for images / scanned PDFs
+    case tagger      // Qwen 2.5 7B   — JSON tag extraction & classification
+    case taggerPlus  // Qwen 2.5 14B  — optional sharper tagging (when installed)
+    case chat        // Mistral v0.3  — RAG document chat (default)
+    case chatPlus    // Gemma 3 4B    — optional premium chat (faster + sharper)
+    case vision      // MiniCPM-V     — smart OCR for images / scanned PDFs
 }
 
 // MARK: - Model Descriptor
@@ -52,6 +53,19 @@ struct LLMModelDescriptor: Sendable {
             // this disambiguates from other Gemma forks.
             filename: "google_gemma-3-4b-it-Q4_K_M.gguf",
             parameterSize: "4B",
+            quantization: "Q4_K_M"
+        ),
+        // Optional premium tagger. Same Qwen 2.5 family as the default
+        // tagger but double the parameter count — meaningfully better at
+        // strict-JSON pool selection across the 300-term vocabulary,
+        // which is the difference between getting a resume tagged
+        // "resume" and getting it tagged "tax". When present,
+        // `LocalLLMService.contextForRole(.tagger)` prefers this.
+        LLMModelDescriptor(
+            role: .taggerPlus,
+            displayName: "Qwen 2.5 14B Instruct",
+            filename: "Qwen2.5-14B-Instruct-Q4_K_M.gguf",
+            parameterSize: "14B",
             quantization: "Q4_K_M"
         ),
     ]
@@ -191,7 +205,7 @@ final class LocalLLMService: LLMServiceProtocol, @unchecked Sendable {
             try await vc.load()
             lock.withLock { visionContext = vc }
         } else {
-            let cfg: LlamaInferenceConfig = descriptor.role == .tagger ? .tagging : .chat
+            let cfg: LlamaInferenceConfig = (descriptor.role == .tagger || descriptor.role == .taggerPlus) ? .tagging : .chat
             let ctx = LlamaContext(descriptor: descriptor, modelPath: path, config: cfg)
             try await ctx.load()
             lock.withLock { contexts[descriptor.role] = ctx }
@@ -272,23 +286,33 @@ final class LocalLLMService: LLMServiceProtocol, @unchecked Sendable {
 
     private func generationConfig(for role: LLMRole) -> LlamaInferenceConfig {
         switch role {
-        case .tagger:   .tagging
-        case .chat:     .chat
-        case .chatPlus: .chat
-        case .vision:   .ocr
+        case .tagger:      .tagging
+        case .taggerPlus:  .tagging
+        case .chat:        .chat
+        case .chatPlus:    .chat
+        case .vision:      .ocr
         }
     }
 
     private func contextForRole(_ role: LLMRole) async throws -> LlamaContext {
-        // When the caller asks for .chat, prefer the premium Gemma chatPlus
-        // model if it's installed. Lets power users upgrade chat quality
-        // just by downloading the optional bundle, with no setting to flip.
+        // When the caller asks for .chat or .tagger, prefer the matching
+        // optional "plus" model if it's installed. Same pattern for both:
+        // Mistral → Gemma for chat, Qwen 7B → Qwen 14B for tagging.
+        // Users opt in by downloading the bundle; nothing to flip.
         let effectiveRole: LLMRole = {
-            if role == .chat {
+            switch role {
+            case .chat:
                 if let plus = LLMModelDescriptor.defaults.first(where: { $0.role == .chatPlus }),
                    isModelAvailable(plus) {
                     return .chatPlus
                 }
+            case .tagger:
+                if let plus = LLMModelDescriptor.defaults.first(where: { $0.role == .taggerPlus }),
+                   isModelAvailable(plus) {
+                    return .taggerPlus
+                }
+            default:
+                break
             }
             return role
         }()
@@ -331,35 +355,54 @@ enum TaggingPrompts {
 
         // Pull more text into the prompt — 4 K was too little for invoices
         // with boilerplate at the top. 8 K still fits comfortably alongside
-        // the system prompt + JSON output budget on Qwen 7B Q4_K_M.
+        // the system prompt + JSON output budget on Qwen 7B/14B Q4_K_M.
         let body = String(text.prefix(8000))
 
         return """
-        You are Athenaeum's local document filing assistant. Read the document text below CAREFULLY before tagging — every tag you return must be defensible by something written in the document. Never tag based on the filename or your guess about what the document "probably" is.
+        You are Athenaeum's document filing assistant. Tag the document below.
 
-        Return a JSON object with exactly these keys:
-        - "title": concise descriptive title (string). Use the document's own title when present; otherwise compose 4-8 words that describe what the document is + about.
-        - "document_type": the single most specific slug from the TAXONOMY below that describes this document (string, kebab-case, exactly as listed). If nothing fits, use null. Do not invent slugs.
-        - "category": the parent category slug from the TAXONOMY for the chosen document_type. Null only if document_type is null.
-        - "tags": 2-6 supporting tag slugs (array of kebab-case strings, exactly from the SUPPORTING TAG POOL). Each tag MUST be justified by something explicitly present in the document. If you only have evidence for two, return two — don't pad.
-        - "correspondent": author, sender, or issuing organization if identifiable (string or null). Look for letterhead, signatures, "From:" lines.
-        - "date": document date in YYYY-MM-DD format if explicitly written in the document (string or null). Do not infer.
-        - "summary": 1-2 sentence summary of what the document is and what it accomplishes (string).
+        THE ONE RULE that overrides everything else:
+        EVERY tag must point to a specific phrase you can quote from the document. If a single mention of the word "tax" is the only thing supporting a `tax` tag, do NOT use it. Tags describe what the document IS, not topics the document casually mentions.
+
+        Common failure modes you must avoid:
+        - A resume that mentions a previous employer in "tax preparation" is NOT tagged `tax`. It's tagged `resume`, `career`, and the industry/role (e.g. `loss-prevention`, `hospitality`).
+        - A brand strategy document that mentions "lease terms for retail locations" is NOT tagged `lease`. It's tagged `brand-strategy`, `marketing-strategy`, plus the relevant industry (e.g. `fashion`, `retail`).
+        - A lab report mentioning a "billing inquiry" is NOT tagged `bill`. It's tagged `lab-results`, `medical`.
+
+        Return ONLY valid JSON (no markdown, no prose) with these keys:
+        - "title": 4-8 word descriptive title. Prefer the document's own title.
+        - "document_type": the single most specific slug from the TAXONOMY that describes what the document IS. kebab-case, exactly as listed. null if nothing fits — do not invent.
+        - "category": the parent category slug of the chosen document_type. null only if document_type is null.
+        - "tags": 2-5 tag slugs from the SUPPORTING TAG POOL. Each one MUST be the primary subject of the document, not a side mention. Prefer fewer accurate tags over more tags.
+        - "correspondent": author/sender/issuing org if clearly identifiable, else null.
+        - "date": document date in YYYY-MM-DD if EXPLICITLY written, else null. Do not infer.
+        - "summary": 1-2 sentence plain description of what this document is.
 
         DOCUMENT TAXONOMY (pick document_type from these slugs; pick category from the category slug at the start of each line):
         \(taxonomy)
 
-        SUPPORTING TAG POOL (use only these for the "tags" array):
+        SUPPORTING TAG POOL (use ONLY these for the "tags" array — anything outside this list will be discarded):
         [\(tagList)]
 
-        RULES:
+        EXAMPLES (note how the tags describe the document's identity, never side mentions):
+
+        Example A — a 2-page resume for a hotel loss-prevention manager:
+        {"title":"Marcus Shaw Loss Prevention Resume","document_type":"resume","category":"employment","tags":["resume","career","loss-prevention","hospitality","security"],"correspondent":"Marcus Shaw","date":null,"summary":"Resume for a hotel loss prevention manager with 8 years at Marriott properties."}
+
+        Example B — a brand-strategy white paper about a fashion incubation model:
+        {"title":"Chaz Jordan Brand Incubation Strategy Analysis","document_type":"whitepaper","category":"business","tags":["brand-strategy","marketing-strategy","fashion","case-study"],"correspondent":null,"date":null,"summary":"Analytical whitepaper on a fashion designer's brand incubation and luxury market disruption strategy."}
+
+        Example C — an IRS Form 1040 with W-2 attached:
+        {"title":"2025 Federal Income Tax Return Form 1040","document_type":"irs-form-1040","category":"tax","tags":["tax-return","1040","w-2","irs"],"correspondent":"Internal Revenue Service","date":"2026-04-15","summary":"Filed 2025 federal income tax return with W-2 wage attachment."}
+
+        HARD RULES:
         - Specificity beats vagueness — "lease-agreement" not "contract" when it's a lease; "irs-form-1040" not "tax" when it's a 1040.
-        - The "category" must be the canonical parent of the chosen document_type from the TAXONOMY above. Don't put a Medical doc under Financial.
-        - Tags must come from the SUPPORTING TAG POOL. Do NOT invent new tags. Do NOT repeat the document_type slug in tags.
-        - Do not assume any tag based on the filename or extension. The filename is unreliable — only the document body counts.
-        - Do not assign more than 6 tags. Be precise, not exhaustive.
-        - If the document is too short or too generic to type confidently, return null for document_type and category, and use only the most defensible tags.
-        - Respond with ONLY valid JSON. No markdown, no explanation, no trailing commas.
+        - Never tag based on filename or extension. Only the document body counts.
+        - Never invent tags. If the right tag isn't in the SUPPORTING TAG POOL, leave it out.
+        - Never repeat the document_type as a tag.
+        - When in doubt, return FEWER tags. Two accurate tags beat five mixed ones.
+        - If the document is too short/generic to classify, return null for document_type/category and only the most defensible tags.
+        - Respond with ONLY valid JSON. No markdown fences, no explanation, no trailing commas.
 
         Document text:
         \(body)

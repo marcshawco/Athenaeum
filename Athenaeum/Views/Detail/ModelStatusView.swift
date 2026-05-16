@@ -642,28 +642,31 @@ struct ModelCard: View {
 
     private var iconName: String {
         switch descriptor.role {
-        case .tagger:   "tag"
-        case .chat:     "bubble.left.and.text.bubble.right"
-        case .chatPlus: "sparkles"
-        case .vision:   "eye"
+        case .tagger:      "tag"
+        case .taggerPlus:  "wand.and.stars"
+        case .chat:        "bubble.left.and.text.bubble.right"
+        case .chatPlus:    "sparkles"
+        case .vision:      "eye"
         }
     }
 
     private var iconColor: Color {
         switch descriptor.role {
-        case .tagger:   Japandi.Colors.accentFallback
-        case .chat:     Japandi.Colors.accentMutedFallback
-        case .chatPlus: Japandi.Colors.warmFallback
-        case .vision:   Japandi.Colors.mineralFallback
+        case .tagger:      Japandi.Colors.accentFallback
+        case .taggerPlus:  Japandi.Colors.warmFallback
+        case .chat:        Japandi.Colors.accentMutedFallback
+        case .chatPlus:    Japandi.Colors.warmFallback
+        case .vision:      Japandi.Colors.mineralFallback
         }
     }
 
     private var roleDescription: String {
         switch descriptor.role {
-        case .tagger:   "Document classification & JSON tag extraction"
-        case .chat:     "RAG-powered document Q&A"
-        case .chatPlus: "Optional — sharper chat. Replaces Mistral for chat once installed."
-        case .vision:   "Smart OCR for images & scanned documents"
+        case .tagger:      "Document classification & JSON tag extraction"
+        case .taggerPlus:  "Optional — sharper tagging. Replaces Qwen 7B for classification once installed."
+        case .chat:        "RAG-powered document Q&A"
+        case .chatPlus:    "Optional — sharper chat. Replaces Mistral for chat once installed."
+        case .vision:      "Smart OCR for images & scanned documents"
         }
     }
 }

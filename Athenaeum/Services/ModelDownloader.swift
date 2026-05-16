@@ -80,6 +80,17 @@ final class ModelDownloader {
                 filename: "google_gemma-3-4b-it-Q4_K_M.gguf",
                 expectedSize: 2_600_000_000
             ),
+            // Optional premium tagger — Qwen 2.5 14B Instruct, 4-bit
+            // quant. ~9 GB. Same family as the default 7B tagger but
+            // significantly better at strict-JSON pool selection over the
+            // 300-term controlled vocabulary. Once downloaded,
+            // `LocalLLMService.contextForRole(.tagger)` prefers it.
+            HFModelInfo(
+                role: .taggerPlus,
+                repoID: "bartowski/Qwen2.5-14B-Instruct-GGUF",
+                filename: "Qwen2.5-14B-Instruct-Q4_K_M.gguf",
+                expectedSize: 9_000_000_000
+            ),
         ]
     }
 
