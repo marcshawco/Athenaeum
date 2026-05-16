@@ -18,45 +18,88 @@ struct LLMModelDescriptor: Sendable {
     let parameterSize: String
     let quantization: String
 
-    static let defaults: [LLMModelDescriptor] = [
-        // Generalist text model — serves BOTH the tagger and chat roles
-        // from a single file on disk and a single context in RAM.
-        // `LocalLLMService.contextForRole` shares the loaded LlamaContext
-        // when two roles point at the same filename, so we don't pay
-        // double memory.
-        LLMModelDescriptor(
-            role: .tagger,
-            displayName: "Qwen 2.5 14B Instruct",
-            filename: "Qwen2.5-14B-Instruct-Q4_K_M.gguf",
-            parameterSize: "14B",
-            quantization: "Q4_K_M"
-        ),
-        LLMModelDescriptor(
-            role: .chat,
-            displayName: "Qwen 2.5 14B Instruct",
-            filename: "Qwen2.5-14B-Instruct-Q4_K_M.gguf",
-            parameterSize: "14B",
-            quantization: "Q4_K_M"
-        ),
-        // Purpose-built retrieval embedding model. 768-dim, trained
-        // contrastively for similarity (unlike chat-LLM hidden states).
-        // Uses `search_document:` / `search_query:` prefix tokens —
-        // applied in RAGService and LocalLLMService.embed.
-        LLMModelDescriptor(
+    /// Active descriptor list — adapts to the host Mac's tier so we don't
+    /// try to load Qwen 14B on an 8 GB MacBook Air. See `HardwareProfiler`
+    /// for tier detection logic and `descriptors(for:)` below for the
+    /// per-tier lineups.
+    static var defaults: [LLMModelDescriptor] {
+        descriptors(for: HardwareProfiler.activeTier)
+    }
+
+    /// Tier-specific model lineup. Lighter Macs get smaller models;
+    /// heavier Macs unlock the bigger ones. Embedding (Nomic, 84 MB)
+    /// is the same everywhere because it's tiny and quality matters.
+    static func descriptors(for tier: HardwareTier) -> [LLMModelDescriptor] {
+        let embedding = LLMModelDescriptor(
             role: .embedding,
             displayName: "Nomic Embed Text v1.5",
             filename: "nomic-embed-text-v1.5.Q4_K_M.gguf",
             parameterSize: "137M",
             quantization: "Q4_K_M"
-        ),
-        LLMModelDescriptor(
+        )
+
+        let vision = LLMModelDescriptor(
             role: .vision,
             displayName: "MiniCPM-V 2.6",
             filename: "ggml-model-Q4_K_M.gguf",
             parameterSize: "8B",
             quantization: "Q4_K_M"
-        ),
-    ]
+        )
+
+        switch tier {
+        case .low:
+            // 8 GB Macs — Qwen 3B (~2 GB) for both tagger and chat,
+            // skip the 5 GB MiniCPM-V (Apple Vision OCR is still
+            // excellent for printed text).
+            return [
+                LLMModelDescriptor(role: .tagger,
+                                   displayName: "Qwen 2.5 3B Instruct",
+                                   filename: "Qwen2.5-3B-Instruct-Q4_K_M.gguf",
+                                   parameterSize: "3B",
+                                   quantization: "Q4_K_M"),
+                LLMModelDescriptor(role: .chat,
+                                   displayName: "Qwen 2.5 3B Instruct",
+                                   filename: "Qwen2.5-3B-Instruct-Q4_K_M.gguf",
+                                   parameterSize: "3B",
+                                   quantization: "Q4_K_M"),
+                embedding,
+            ]
+        case .standard:
+            // 16 GB Macs — Qwen 7B (~4.7 GB) plus MiniCPM-V (~5 GB).
+            return [
+                LLMModelDescriptor(role: .tagger,
+                                   displayName: "Qwen 2.5 7B Instruct",
+                                   filename: "Qwen2.5-7B-Instruct-Q4_K_M.gguf",
+                                   parameterSize: "7B",
+                                   quantization: "Q4_K_M"),
+                LLMModelDescriptor(role: .chat,
+                                   displayName: "Qwen 2.5 7B Instruct",
+                                   filename: "Qwen2.5-7B-Instruct-Q4_K_M.gguf",
+                                   parameterSize: "7B",
+                                   quantization: "Q4_K_M"),
+                embedding,
+                vision,
+            ]
+        case .high, .workstation:
+            // 24+ GB Macs — Qwen 14B (~9 GB) plus MiniCPM-V (~5 GB).
+            // Workstation is identical for now; reserved for a 32B
+            // option if we ever ship one.
+            return [
+                LLMModelDescriptor(role: .tagger,
+                                   displayName: "Qwen 2.5 14B Instruct",
+                                   filename: "Qwen2.5-14B-Instruct-Q4_K_M.gguf",
+                                   parameterSize: "14B",
+                                   quantization: "Q4_K_M"),
+                LLMModelDescriptor(role: .chat,
+                                   displayName: "Qwen 2.5 14B Instruct",
+                                   filename: "Qwen2.5-14B-Instruct-Q4_K_M.gguf",
+                                   parameterSize: "14B",
+                                   quantization: "Q4_K_M"),
+                embedding,
+                vision,
+            ]
+        }
+    }
 
     /// Distinct descriptors keyed by filename, preserving order. Multiple
     /// roles can map to the same file (tagger + chat both run on Qwen 14B);

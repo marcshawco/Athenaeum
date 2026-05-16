@@ -26,13 +26,16 @@ struct ModelStatusView: View {
                         .font(Japandi.Typography.largeTitle)
                         .foregroundStyle(Japandi.Colors.textPrimaryFB)
 
-                    Text("Three specialised models running entirely on your Mac.")
+                    Text("Models sized for your Mac, running entirely on-device.")
                         .font(Japandi.Typography.body)
                         .foregroundStyle(Japandi.Colors.textSecondaryFB)
                 }
 
                 // System info
                 systemInfoCard
+
+                // Hardware tier — explains which lineup is active and why.
+                hardwareTierCard
 
                 // Models directory
                 HStack {
@@ -172,6 +175,54 @@ struct ModelStatusView: View {
         } else {
             NSWorkspace.shared.open(modelManager.modelsDirectory)
         }
+    }
+
+    // MARK: - Hardware Tier
+
+    @ViewBuilder
+    private var hardwareTierCard: some View {
+        let tier = HardwareProfiler.activeTier
+        let detected = HardwareProfiler.detected
+        let overridden = HardwareProfiler.isOverridden
+
+        VStack(alignment: .leading, spacing: Japandi.Spacing.sm) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Hardware tier")
+                        .eyebrowStyle()
+                    HStack(spacing: Japandi.Spacing.xs) {
+                        Text(tier.displayName)
+                            .font(.system(size: 18, weight: .medium, design: .serif))
+                            .foregroundStyle(Japandi.Colors.textPrimaryFB)
+                        if overridden {
+                            Text("(override)")
+                                .font(Japandi.Typography.caption)
+                                .foregroundStyle(Japandi.Colors.textTertiaryFB)
+                        } else if tier != detected {
+                            Text("· auto: \(detected.displayName)")
+                                .font(Japandi.Typography.caption)
+                                .foregroundStyle(Japandi.Colors.textTertiaryFB)
+                        }
+                    }
+                }
+                Spacer()
+                Text(String(format: "%.0f GB unified", HardwareProfiler.totalMemoryGB))
+                    .font(Japandi.Typography.caption)
+                    .foregroundStyle(Japandi.Colors.textTertiaryFB)
+            }
+
+            Text(tier.rationale)
+                .font(Japandi.Typography.caption)
+                .foregroundStyle(Japandi.Colors.textSecondaryFB)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text("Change in Settings → AI Models if you want a different lineup.")
+                .font(Japandi.Typography.caption)
+                .foregroundStyle(Japandi.Colors.textTertiaryFB)
+        }
+        .padding(Japandi.Spacing.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .premiumPane()
     }
 
     // MARK: - System Info

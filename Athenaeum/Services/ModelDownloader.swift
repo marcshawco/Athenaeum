@@ -49,40 +49,68 @@ final class ModelDownloader {
         let filename: String
         let expectedSize: Int64 // bytes, approximate
 
-        static let defaults: [HFModelInfo] = [
-            // Generalist text model — serves both tagger and chat roles.
-            // One file, one download, one in-RAM context.
-            HFModelInfo(
-                role: .tagger,
-                repoID: "bartowski/Qwen2.5-14B-Instruct-GGUF",
-                filename: "Qwen2.5-14B-Instruct-Q4_K_M.gguf",
-                expectedSize: 9_000_000_000
-            ),
-            HFModelInfo(
-                role: .chat,
-                repoID: "bartowski/Qwen2.5-14B-Instruct-GGUF",
-                filename: "Qwen2.5-14B-Instruct-Q4_K_M.gguf",
-                expectedSize: 9_000_000_000
-            ),
-            // Purpose-built retrieval embedding model. Tiny next to the
-            // text generalist (~84 MB) and trained contrastively for
-            // similarity — strictly better than recycling a chat LLM's
-            // hidden state. (Real file is 84,106,624 bytes; the 75 %
-            // integrity check in `urlSession(_:downloadTask:didFinishDownloadingTo:)`
-            // rejected an inflated estimate as "too small to be valid".)
-            HFModelInfo(
+        /// Active downloader registry — mirrors `LLMModelDescriptor.defaults`
+        /// so the Model Status download buttons line up with the lineup
+        /// chosen for this Mac's tier.
+        static var defaults: [HFModelInfo] {
+            entries(for: HardwareProfiler.activeTier)
+        }
+
+        static func entries(for tier: HardwareTier) -> [HFModelInfo] {
+            let embedding = HFModelInfo(
                 role: .embedding,
                 repoID: "nomic-ai/nomic-embed-text-v1.5-GGUF",
                 filename: "nomic-embed-text-v1.5.Q4_K_M.gguf",
                 expectedSize: 84_000_000
-            ),
-            HFModelInfo(
+            )
+            let vision = HFModelInfo(
                 role: .vision,
                 repoID: "openbmb/MiniCPM-V-2_6-gguf",
                 filename: "ggml-model-Q4_K_M.gguf",
                 expectedSize: 5_000_000_000
-            ),
-        ]
+            )
+
+            switch tier {
+            case .low:
+                return [
+                    HFModelInfo(role: .tagger,
+                                repoID: "bartowski/Qwen2.5-3B-Instruct-GGUF",
+                                filename: "Qwen2.5-3B-Instruct-Q4_K_M.gguf",
+                                expectedSize: 2_000_000_000),
+                    HFModelInfo(role: .chat,
+                                repoID: "bartowski/Qwen2.5-3B-Instruct-GGUF",
+                                filename: "Qwen2.5-3B-Instruct-Q4_K_M.gguf",
+                                expectedSize: 2_000_000_000),
+                    embedding,
+                ]
+            case .standard:
+                return [
+                    HFModelInfo(role: .tagger,
+                                repoID: "bartowski/Qwen2.5-7B-Instruct-GGUF",
+                                filename: "Qwen2.5-7B-Instruct-Q4_K_M.gguf",
+                                expectedSize: 4_700_000_000),
+                    HFModelInfo(role: .chat,
+                                repoID: "bartowski/Qwen2.5-7B-Instruct-GGUF",
+                                filename: "Qwen2.5-7B-Instruct-Q4_K_M.gguf",
+                                expectedSize: 4_700_000_000),
+                    embedding,
+                    vision,
+                ]
+            case .high, .workstation:
+                return [
+                    HFModelInfo(role: .tagger,
+                                repoID: "bartowski/Qwen2.5-14B-Instruct-GGUF",
+                                filename: "Qwen2.5-14B-Instruct-Q4_K_M.gguf",
+                                expectedSize: 9_000_000_000),
+                    HFModelInfo(role: .chat,
+                                repoID: "bartowski/Qwen2.5-14B-Instruct-GGUF",
+                                filename: "Qwen2.5-14B-Instruct-Q4_K_M.gguf",
+                                expectedSize: 9_000_000_000),
+                    embedding,
+                    vision,
+                ]
+            }
+        }
     }
 
     init(modelsDirectory: URL) {

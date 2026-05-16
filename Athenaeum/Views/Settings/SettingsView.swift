@@ -12,6 +12,7 @@ struct SettingsView: View {
     @AppStorage("contextSize") private var contextSize = 4096
     @AppStorage("inferenceEngine") private var inferenceEngineRaw: String = InferenceEngine.llamaCpp.rawValue
     @AppStorage("autoTagEnabled") private var autoTagEnabled: Bool = true
+    @AppStorage(HardwareProfiler.overrideKey) private var hardwareTierOverride: String = "auto"
     @State private var vaultPath = DocumentVaultService.shared.vaultURL.path
     @State private var selection: SettingsTab = .general
     /// First time Settings opens we land on Help & Tour instead of General, so
@@ -315,6 +316,8 @@ struct SettingsView: View {
 
     private var aiTab: some View {
         VStack(alignment: .leading, spacing: Japandi.Spacing.lg) {
+            hardwareTierPickerCard
+
             inferenceEngineCard
 
             hardwareAnalyzerCard
@@ -355,6 +358,49 @@ struct SettingsView: View {
             .frame(maxWidth: .infinity)
             .scrollDisabled(true)
         }
+    }
+
+    // MARK: - Hardware tier picker
+
+    private var hardwareTierPickerCard: some View {
+        VStack(alignment: .leading, spacing: Japandi.Spacing.sm) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Hardware Tier")
+                        .font(.system(size: 16, weight: .medium, design: .serif))
+                        .foregroundStyle(Japandi.Colors.textPrimaryFB)
+                    Text("Auto: \(HardwareProfiler.detected.displayName) · \(String(format: "%.0f GB unified memory", HardwareProfiler.totalMemoryGB))")
+                        .font(Japandi.Typography.caption)
+                        .foregroundStyle(Japandi.Colors.textTertiaryFB)
+                }
+                Spacer()
+            }
+
+            Picker("Tier", selection: $hardwareTierOverride) {
+                Text("Auto-detect").tag("auto")
+                Divider()
+                ForEach(HardwareTier.allCases, id: \.rawValue) { tier in
+                    Text(tier.displayName).tag(tier.rawValue)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .onChange(of: hardwareTierOverride) { _, _ in
+                // Tell ModelStatusView and other consumers to re-read the
+                // active descriptors. ModelManager.scanForModels handles
+                // the bulk; tier-aware downloader entries pick up on
+                // their next read.
+                NotificationCenter.default.post(name: .modelsDidChange, object: nil)
+            }
+
+            Text("Model lineup adapts to the chosen tier. Compact runs on 8 GB Macs, Standard on 16 GB, Performance on 24+ GB. Anything above 24 GB shows the same lineup until we ship a heavier model worth the RAM.")
+                .font(Japandi.Typography.caption)
+                .foregroundStyle(Japandi.Colors.textTertiaryFB)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(Japandi.Spacing.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .premiumPane()
     }
 
     // MARK: - Inference engine
