@@ -534,25 +534,68 @@ final class DocumentProcessor {
         )
     }
 
+    /// Extract the first complete JSON object from the model's raw output
+    /// and decode it as a `DocumentClassification`.
+    ///
+    /// The old implementation took the substring from the first `{` to the
+    /// last `}`. Qwen 14B sometimes emits the same JSON object twice
+    /// (`{...}{...}`) at the tail of its response — likely a sampling
+    /// quirk from feeding the prompt text back through. Concatenating those
+    /// two siblings produced invalid JSON and the parse failed silently,
+    /// dropping otherwise-perfect tags ("loss-prevention", "hospitality",
+    /// etc.) and marking the document `to-review`.
+    ///
+    /// New approach: walk the string with a brace-depth counter (respecting
+    /// string literals and escapes), extract each top-level `{...}` chunk
+    /// individually, and return the first one that decodes successfully.
     private func parseClassification(_ response: String) -> DocumentClassification? {
-        var jsonString = response.trimmingCharacters(in: .whitespacesAndNewlines)
-        if jsonString.hasPrefix("```json") {
-            jsonString = String(jsonString.dropFirst(7))
-        } else if jsonString.hasPrefix("```") {
-            jsonString = String(jsonString.dropFirst(3))
+        var s = response.trimmingCharacters(in: .whitespacesAndNewlines)
+        if s.hasPrefix("```json") {
+            s = String(s.dropFirst(7))
+        } else if s.hasPrefix("```") {
+            s = String(s.dropFirst(3))
         }
-        if jsonString.hasSuffix("```") {
-            jsonString = String(jsonString.dropLast(3))
-        }
-        if let firstBrace = jsonString.firstIndex(of: "{"),
-           let lastBrace = jsonString.lastIndex(of: "}") {
-            jsonString = String(jsonString[firstBrace...lastBrace])
+        if s.hasSuffix("```") {
+            s = String(s.dropLast(3))
         }
 
-        guard let jsonData = jsonString.trimmingCharacters(in: .whitespacesAndNewlines).data(using: .utf8) else {
-            return nil
+        let chars = Array(s)
+        var i = 0
+        while i < chars.count {
+            guard chars[i] == "{" else { i += 1; continue }
+
+            var depth = 0
+            var inString = false
+            var escape = false
+            var j = i
+            while j < chars.count {
+                let c = chars[j]
+                if escape {
+                    escape = false
+                } else if c == "\\" {
+                    escape = true
+                } else if c == "\"" {
+                    inString.toggle()
+                } else if !inString {
+                    if c == "{" {
+                        depth += 1
+                    } else if c == "}" {
+                        depth -= 1
+                        if depth == 0 {
+                            let candidate = String(chars[i...j])
+                            if let data = candidate.data(using: .utf8),
+                               let parsed = try? JSONDecoder().decode(DocumentClassification.self, from: data) {
+                                return parsed
+                            }
+                            break // candidate didn't parse; try next `{` after this i
+                        }
+                    }
+                }
+                j += 1
+            }
+            i += 1
         }
-        return try? JSONDecoder().decode(DocumentClassification.self, from: jsonData)
+        return nil
     }
 
     private func ensureUsefulTags(
@@ -758,7 +801,7 @@ enum TaggerLog {
         if FileManager.default.fileExists(atPath: url.path) {
             if let handle = try? FileHandle(forWritingTo: url) {
                 defer { try? handle.close() }
-                try? handle.seekToEnd()
+                _ = try? handle.seekToEnd()
                 try? handle.write(contentsOf: data)
             }
         } else {
