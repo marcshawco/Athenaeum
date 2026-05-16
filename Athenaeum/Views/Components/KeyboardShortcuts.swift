@@ -78,7 +78,7 @@ struct BatchActionToolbar: View {
                     }
 
                     Button(action: onAIRename) {
-                        Label("Rename with AI", systemImage: "sparkles")
+                        Label("Auto Name", systemImage: "sparkles")
                     }
 
                     Button(role: .destructive, action: onDelete) {

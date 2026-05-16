@@ -304,7 +304,7 @@ struct ContentView: View {
             aiRenameSuggestions = results
             isGeneratingRenames = false
             if results.isEmpty {
-                await showBanner("AI rename couldn't read enough text from those documents")
+                await showBanner("Auto Name couldn't read enough text from those documents")
             }
         }
     }
@@ -325,7 +325,7 @@ struct ContentView: View {
                 if processor.applyRename(doc, to: s.accepted) { renamed += 1 }
             }
             aiRenameSuggestions.removeAll()
-            await showBanner("Renamed \(renamed) document\(renamed == 1 ? "" : "s") with AI")
+            await showBanner("Auto Named \(renamed) document\(renamed == 1 ? "" : "s")")
         }
     }
 

@@ -99,7 +99,7 @@ struct DocumentContextMenu: ViewModifier {
                 Button {
                     presentShareSheet()
                 } label: {
-                    Label("Share…", systemImage: "square.and.arrow.up")
+                    Label("Share", systemImage: "square.and.arrow.up")
                 }
                 .disabled(existingStoredURL == nil && document.fileData == nil)
 
@@ -107,7 +107,7 @@ struct DocumentContextMenu: ViewModifier {
                 Button {
                     exportDocument()
                 } label: {
-                    Label("Export Original…", systemImage: "tray.and.arrow.up")
+                    Label("Export Original", systemImage: "tray.and.arrow.up")
                 }
 
                 Divider()
@@ -120,7 +120,7 @@ struct DocumentContextMenu: ViewModifier {
                         userInfo: ["documentIDs": [document.id]]
                     )
                 } label: {
-                    Label("Rename with AI…", systemImage: "sparkles")
+                    Label("Auto Name", systemImage: "sparkles")
                 }
                 .disabled(document.extractedText?.isEmpty != false)
 
@@ -134,7 +134,7 @@ struct DocumentContextMenu: ViewModifier {
                     newTagText = ""
                     showAddTagSheet = true
                 } label: {
-                    Label("Add Tag…", systemImage: "tag.fill")
+                    Label("Add Tag", systemImage: "tag.fill")
                 }
 
                 // Add-to-Folder submenu — list every folder, then a

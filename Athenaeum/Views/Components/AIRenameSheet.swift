@@ -36,7 +36,7 @@ struct AIRenameSheet: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text("Rename with AI")
+            Text("Auto Name")
                 .font(.system(size: 18, weight: .medium, design: .serif))
                 .foregroundStyle(Japandi.Colors.textPrimaryFB)
             Text("The local model read each document and proposed a clean name. Review, edit, or cancel.")
