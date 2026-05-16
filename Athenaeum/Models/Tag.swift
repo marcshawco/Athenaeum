@@ -56,7 +56,9 @@ extension Tag {
         "compensation", "equity-grant", "stock-options", "severance", "non-compete", "career",
         // Education
         "training", "certification", "transcript", "diploma", "tuition", "scholarship", "financial-aid",
-        "student-loan", "school", "education",
+        "student-loan", "school", "education", "course", "credit", "credit-transfer", "curriculum",
+        "academic", "university", "college", "syllabus", "prerequisite", "articulation", "enrollment",
+        "registration-form", "academic-record", "degree-plan",
         // Contracts
         "contract", "agreement", "nda", "statement-of-work", "proposal", "quote", "estimate", "purchase-order",
         "work-order", "change-order", "scope", "deliverables", "milestone", "invoice-terms", "signature",

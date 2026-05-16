@@ -423,13 +423,17 @@ enum TaggingPrompts {
         - Specificity beats vagueness — "lease-agreement" not "contract" when it's a lease; "irs-form-1040" not "tax" when it's a 1040.
         - Never tag based on filename or extension. Only the document body counts.
         - Never invent tags. If the right tag isn't in the SUPPORTING TAG POOL, leave it out.
-        - Never repeat the document_type as a tag.
         - When in doubt, return FEWER tags. Two accurate tags beat five mixed ones.
         - If the document is too short/generic to classify, return null for document_type/category and only the most defensible tags.
         - Respond with ONLY valid JSON. No markdown fences, no explanation, no trailing commas.
+        - Do NOT continue, summarize, or echo the document text. Your entire job is to emit the JSON object once and stop.
 
-        Document text:
+        DOCUMENT TEXT (read this, then produce the JSON):
         \(body)
+
+        === END OF DOCUMENT ===
+
+        Now respond with the single JSON object describing the document above. Begin your response with `{` and end with `}`. Output nothing else.
         """
     }
 

@@ -613,11 +613,11 @@ final class DocumentProcessor {
         let allowed = Set(Tag.builtInPool).union(existingTagNames.map { $0.lowercased() })
         var tags = Set(normalized.filter { allowed.contains($0) })
 
-        // Strip the document_type slug if the model also emitted it as a tag —
-        // it's already represented via `documentTypeSlug` on the Document.
-        if let typeSlug = repaired.documentType?.nilIfBlank.map({ normalizeTagName($0) }) {
-            tags.remove(typeSlug)
-        }
+        // Note: we DO keep the document_type slug as a tag if the model
+        // emitted it. The library grid cards don't surface a separate type
+        // pill, so stripping `resume`/`agreement`/`whitepaper` here would
+        // leave the doc less findable. The DocumentTypeSlug on the Document
+        // model still gets set independently via applyClassification.
 
         // Only fall back to the offline keyword classifier if the LLM gave us
         // nothing at all. Merging offline tags into a partial LLM result was
