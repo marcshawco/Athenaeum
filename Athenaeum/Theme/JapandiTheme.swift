@@ -49,14 +49,19 @@ enum Japandi {
         // washFallback — accent soft (chip backgrounds, selected wash).
         static let washFallback        = Color(light: 0xE6EBE3, dark: 0x243A2D)
 
-        // Dark moss inspector (right-rail). Used regardless of light/dark mode
-        // — the inspector is always the deep moss pane.
-        static let inspectorBg         = Color(hex: 0x243A2D)
-        static let inspectorInk        = Color(hex: 0xEDEFE6)
-        static let inspectorInk2       = Color(hex: 0xB7C2B0)
-        static let inspectorInk3       = Color(hex: 0x8FA395)
-        static let inspectorAccent     = Color(hex: 0xC8D4BE)
-        static let inspectorRule       = Color(hex: 0xEDEFE6).opacity(0.08)
+        // Inspector right-rail. Warm charcoal pulled from the brand's deep
+        // ink so the panel reads as an extension of the brand mark sitting
+        // against the cream paper, rather than a random moss-green slab.
+        // Used regardless of system light/dark mode.
+        static let inspectorBg         = Color(hex: 0x1A1614)
+        static let inspectorInk        = Color(hex: 0xEDE9DF)
+        static let inspectorInk2       = Color(hex: 0xB9B2A4)
+        static let inspectorInk3       = Color(hex: 0x807868)
+        // Accent inside the dark panel — same clay/gold the rest of the app
+        // uses for warm chips, so the inspector keeps continuity with tags
+        // and the OCR badges instead of inventing a third hue.
+        static let inspectorAccent     = Color(hex: 0xC8A37A)
+        static let inspectorRule       = Color(hex: 0xEDE9DF).opacity(0.08)
 
         // Clay/gold warm secondary (OCR badges, warm pills).
         static let warmFallback        = Color(light: 0xB98A4F, dark: 0xC8A37A)

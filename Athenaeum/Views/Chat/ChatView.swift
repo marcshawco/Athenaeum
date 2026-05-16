@@ -32,6 +32,12 @@ struct ChatView: View {
     @State private var showHistoryPopover = false
     @State private var renameTargetID: UUID?
     @State private var renameText: String = ""
+    @State private var showClearConfirm = false
+    @State private var hasRestoredOnAppear = false
+
+    /// Survives across navigation (citation click → library → back to chat)
+    /// so the same conversation re-opens instead of resetting to empty.
+    @AppStorage("currentChatID") private var storedChatIDRaw: String = ""
 
     var body: some View {
         VStack(spacing: 0) {
@@ -105,6 +111,21 @@ struct ChatView: View {
                 .buttonStyle(.plain)
                 .help("New chat")
                 .accessibilityLabel("New chat")
+
+                // Clear chat — destructive. Wipes the current conversation
+                // from history entirely. Distinct from "New chat" because
+                // it does NOT preserve the current chat in history.
+                Button {
+                    showClearConfirm = true
+                } label: {
+                    Image(systemName: "trash")
+                        .font(.system(size: 11, weight: .light))
+                        .foregroundStyle(Japandi.Colors.warmFallback)
+                }
+                .buttonStyle(.plain)
+                .help("Clear this chat")
+                .accessibilityLabel("Clear chat")
+                .disabled(messages.isEmpty && currentConversationID == nil)
             }
             .padding(.horizontal, Japandi.Spacing.lg)
             .padding(.vertical, Japandi.Spacing.md)
@@ -132,6 +153,25 @@ struct ChatView: View {
         .background(Japandi.Colors.bgFallback)
         .task {
             await repairIndexIfNeeded()
+        }
+        .onAppear {
+            // Restore the most recent conversation the first time the view
+            // appears in this lifetime. Citation clicks → library → return
+            // here will re-enter this branch and reload the chat the user
+            // left, rather than presenting an empty screen.
+            guard !hasRestoredOnAppear else { return }
+            hasRestoredOnAppear = true
+            restoreLastConversation()
+        }
+        .confirmationDialog(
+            "Clear this chat?",
+            isPresented: $showClearConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Clear chat", role: .destructive) { clearCurrentChat() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Deletes the current conversation from history. Other saved chats are untouched.")
         }
     }
 
@@ -601,7 +641,24 @@ struct ChatView: View {
         modelContext.insert(conv)
         try? modelContext.save()
         currentConversationID = conv.id
+        storedChatIDRaw = conv.id.uuidString
         return conv
+    }
+
+    /// On first appearance, re-hydrate the conversation the user was last in.
+    /// Priority: the explicit `currentChatID` AppStorage, then the most
+    /// recently modified chat that actually has content. Falls through to
+    /// the empty default if there's nothing to restore.
+    private func restoreLastConversation() {
+        if !messages.isEmpty { return }   // already loaded in-memory
+        if let uuid = UUID(uuidString: storedChatIDRaw),
+           let saved = conversations.first(where: { $0.id == uuid }) {
+            load(saved)
+            return
+        }
+        if let recent = conversations.first(where: { !$0.storedMessages().isEmpty }) {
+            load(recent)
+        }
     }
 
     /// Snapshot the in-memory message list onto the active conversation. We
@@ -646,6 +703,7 @@ struct ChatView: View {
         }
         streamedResponse = ""
         currentConversationID = conv.id
+        storedChatIDRaw = conv.id.uuidString
     }
 
     /// Persist the current chat (if it has any messages) and start a fresh,
@@ -660,6 +718,27 @@ struct ChatView: View {
         showSources = false
         streamedResponse = ""
         currentConversationID = nil
+        storedChatIDRaw = ""
+    }
+
+    /// Destructive: wipe the current conversation entirely (drop from
+    /// SwiftData + reset in-memory state). Other chats in history stay put.
+    /// Wired behind a confirmation dialog so it can't fire by accident.
+    private func clearCurrentChat() {
+        if let id = currentConversationID,
+           let conv = conversations.first(where: { $0.id == id }) {
+            modelContext.delete(conv)
+            try? modelContext.save()
+        }
+        stopGeneration(keepingPartialResponse: false)
+        messages.removeAll()
+        sourcesByMessage.removeAll()
+        expandedSourcesByMessage.removeAll()
+        currentSources = []
+        showSources = false
+        streamedResponse = ""
+        currentConversationID = nil
+        storedChatIDRaw = ""
     }
 
     private func delete(_ conv: ChatConversation) {
@@ -741,48 +820,62 @@ struct ChatBubble: View {
     }
 
     var body: some View {
-        HStack {
+        HStack(alignment: .top) {
             if isUser { Spacer(minLength: Japandi.Spacing.xxl) }
 
-            VStack(alignment: isUser ? .trailing : .leading, spacing: Japandi.Spacing.xxxs) {
-                if !isUser && !sources.isEmpty {
-                    CitationText(text: cleanedContent, sources: sources)
-                } else {
-                    Text(cleanedContent)
-                        .font(Japandi.Typography.body)
-                        .foregroundStyle(isUser ? .white : Japandi.Colors.textPrimaryFB)
-                        .textSelection(.enabled)
-                }
-
-                Text(message.timestamp.formatted(date: .omitted, time: .shortened))
-                    .font(.system(size: 9))
-                    .foregroundStyle(
-                        isUser
-                            ? Color.white.opacity(0.5)
-                            : Japandi.Colors.textTertiaryFB
-                    )
+            if isUser {
+                // User turn — keep the bubble so the question is visually
+                // anchored opposite the assistant's open prose.
+                userBubble
+            } else {
+                // Assistant turn — render as a flat, breathable column. No
+                // surrounding card, no inset; the page is the surface, just
+                // like NotebookLM. Spacing is what carries hierarchy.
+                assistantColumn
             }
-            .padding(.horizontal, Japandi.Spacing.md)
-            .padding(.vertical, Japandi.Spacing.sm)
-            .background(
-                isUser
-                    ? Japandi.Colors.inkFallback
-                    : Japandi.Colors.surfaceRaisedFB
-            )
-            .clipShape(RoundedRectangle(cornerRadius: Japandi.Radius.md, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: Japandi.Radius.md, style: .continuous)
-                    .strokeBorder(
-                        isUser
-                            ? Color.white.opacity(0.06)
-                            : Japandi.Colors.borderFallback.opacity(0.85),
-                        lineWidth: 0.5
-                    )
-            )
-            .japandiShadow(Japandi.Shadow.subtle)
 
             if !isUser { Spacer(minLength: Japandi.Spacing.xxl) }
         }
+    }
+
+    private var userBubble: some View {
+        VStack(alignment: .trailing, spacing: 2) {
+            Text(message.content)
+                .font(Japandi.Typography.body)
+                .foregroundStyle(.white)
+                .textSelection(.enabled)
+            Text(message.timestamp.formatted(date: .omitted, time: .shortened))
+                .font(.system(size: 9))
+                .foregroundStyle(Color.white.opacity(0.5))
+        }
+        .padding(.horizontal, Japandi.Spacing.md)
+        .padding(.vertical, Japandi.Spacing.sm)
+        .background(Japandi.Colors.inkFallback)
+        .clipShape(RoundedRectangle(cornerRadius: Japandi.Radius.md, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: Japandi.Radius.md, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.06), lineWidth: 0.5)
+        )
+        .japandiShadow(Japandi.Shadow.subtle)
+    }
+
+    private var assistantColumn: some View {
+        VStack(alignment: .leading, spacing: Japandi.Spacing.xs) {
+            if sources.isEmpty {
+                // No retrieved context — still render block-aware, just
+                // without citation pills (RichMessage degrades cleanly).
+                RichMessage(text: cleanedContent, sources: [])
+            } else {
+                RichMessage(text: cleanedContent, sources: sources)
+            }
+            Text(message.timestamp.formatted(date: .omitted, time: .shortened))
+                .font(.system(size: 9))
+                .foregroundStyle(Japandi.Colors.textTertiaryFB)
+                .padding(.top, 2)
+        }
+        .padding(.horizontal, Japandi.Spacing.md)
+        .padding(.vertical, Japandi.Spacing.sm)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

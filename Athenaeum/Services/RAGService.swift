@@ -185,6 +185,14 @@ final class RAGService {
                 This is an ongoing chat, so use the conversation history to understand follow-up questions.
                 Answer the user's latest question using ONLY the retrieved document context below.
 
+                FORMATTING — IMPORTANT:
+                - Use clear Markdown structure. Use blank lines between paragraphs and list items.
+                - For step-by-step instructions, use numbered lists ("1.", "2.", …) with each step on its own line.
+                - For supporting points or examples, use bulleted lists with "- " on their own line.
+                - Use **bold** for key terms, document titles, and short labels at the start of a list item ("**Description:** …").
+                - Use short headings like "## Heading" only when grouping a long answer; do not over-section short answers.
+                - Never inline a list as comma-separated text — give each item its own line.
+
                 CITATION FORMAT — IMPORTANT:
                 - Cite sources inline as bracketed numbers like [1] or [2], right after the sentence or clause they support.
                 - Do NOT write the word "Source" — just [1], [2], [3].

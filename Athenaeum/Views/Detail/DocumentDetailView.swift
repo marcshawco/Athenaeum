@@ -58,11 +58,34 @@ struct DocumentDetailView: View {
 
     private var headerSection: some View {
         VStack(alignment: .leading, spacing: Japandi.Spacing.sm) {
-            Text("Document · Selected")
-                .font(Japandi.Typography.eyebrow)
-                .textCase(.uppercase)
-                .tracking(2)
-                .foregroundStyle(Japandi.Colors.inspectorInk3)
+            HStack(alignment: .center) {
+                Text("Document · Selected")
+                    .font(Japandi.Typography.eyebrow)
+                    .textCase(.uppercase)
+                    .tracking(2)
+                    .foregroundStyle(Japandi.Colors.inspectorInk3)
+                Spacer()
+                // Close the inspector. Lives at the very top right of the
+                // dark-moss panel so it's predictable and matches the
+                // chrome of every other panel in the app.
+                Button {
+                    NotificationCenter.default.post(name: .closeInspector, object: nil)
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(Japandi.Colors.inspectorInk2)
+                        .frame(width: 22, height: 22)
+                        .background(
+                            Circle()
+                                .fill(Color.white.opacity(0.06))
+                                .overlay(Circle().strokeBorder(Japandi.Colors.inspectorRule, lineWidth: 0.5))
+                        )
+                }
+                .buttonStyle(.plain)
+                .help("Close inspector")
+                .accessibilityLabel("Close inspector")
+                .keyboardShortcut(.cancelAction)
+            }
 
             HStack(alignment: .top) {
                 if isEditing {
@@ -103,7 +126,7 @@ struct DocumentDetailView: View {
                             .padding(.horizontal, 9)
                             .padding(.vertical, 4)
                             .background(Japandi.Colors.inspectorAccent)
-                            .foregroundStyle(Color(hex: 0x243A2D))
+                            .foregroundStyle(Japandi.Colors.inspectorBg)
                             .clipShape(Capsule())
                     }
                     .buttonStyle(.plain)
@@ -382,38 +405,30 @@ struct DocumentDetailView: View {
             }
 
             HStack {
-                Text("Extracted Content")
+                Text("Preview")
                     .font(Japandi.Typography.eyebrow)
                     .textCase(.uppercase)
                     .tracking(2)
                     .foregroundStyle(Japandi.Colors.inspectorInk3)
                 Spacer()
-                if let text = document.extractedText {
-                    Text("\(text.count) chars")
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundStyle(Japandi.Colors.inspectorInk3)
+                Button {
+                    showPreview = true
+                } label: {
+                    Text("Open full preview ›")
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(Japandi.Colors.inspectorAccent)
                 }
+                .buttonStyle(.plain)
+                .help("Open the full-size document preview window")
             }
 
-            if let text = document.extractedText, !text.isEmpty {
-                Text(text.prefix(2000))
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(Japandi.Colors.inspectorInk2)
-                    .textSelection(.enabled)
-                    .padding(Japandi.Spacing.sm)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.white.opacity(0.04))
-                    .clipShape(RoundedRectangle(cornerRadius: Japandi.Radius.sm, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Japandi.Radius.sm, style: .continuous)
-                            .strokeBorder(Japandi.Colors.inspectorRule, lineWidth: 0.5)
-                    )
-            } else {
-                Text("No text extracted yet")
-                    .font(Japandi.Typography.body)
-                    .foregroundStyle(Japandi.Colors.inspectorInk3)
-                    .italic()
-            }
+            DocumentInlinePreview(document: document)
+                .frame(height: 260)
+                .clipShape(RoundedRectangle(cornerRadius: Japandi.Radius.sm, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: Japandi.Radius.sm, style: .continuous)
+                        .strokeBorder(Japandi.Colors.inspectorRule, lineWidth: 0.5)
+                )
         }
         .padding(.horizontal, 22)
         .padding(.vertical, 14)

@@ -9,6 +9,8 @@ struct DocumentContextMenu: ViewModifier {
     @State private var quickLookURL: URL?
     @State private var quickLookTempURL: URL?
     @State private var showInAppPreview = false
+    @State private var showAddTagSheet = false
+    @State private var newTagText: String = ""
 
     func body(content: Content) -> some View {
         content
@@ -116,6 +118,13 @@ struct DocumentContextMenu: ViewModifier {
                 }
 
                 Button {
+                    newTagText = ""
+                    showAddTagSheet = true
+                } label: {
+                    Label("Add Tag…", systemImage: "tag.fill")
+                }
+
+                Button {
                     clearTags()
                 } label: {
                     Label("Clear Tags", systemImage: "tag.slash")
@@ -130,6 +139,9 @@ struct DocumentContextMenu: ViewModifier {
                 } label: {
                     Label("Delete", systemImage: "trash")
                 }
+            }
+            .sheet(isPresented: $showAddTagSheet) {
+                addTagSheet
             }
             .alert("Delete Document?", isPresented: $showDeleteConfirmation) {
                 Button("Cancel", role: .cancel) {}
@@ -237,6 +249,79 @@ struct DocumentContextMenu: ViewModifier {
            let contentView = window.contentView {
             picker.show(relativeTo: .zero, of: contentView, preferredEdge: .minY)
         }
+    }
+
+    // Small modal for typing a new tag. Lives here (in the menu modifier)
+    // so right-click → Add Tag… → Enter is a 3-key flow with no detours.
+    private var addTagSheet: some View {
+        VStack(alignment: .leading, spacing: Japandi.Spacing.md) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Add tag")
+                    .font(.system(size: 14, weight: .medium, design: .serif))
+                    .foregroundStyle(Japandi.Colors.textPrimaryFB)
+                Text("Reuse an existing tag by name, or invent a new one. Tags use kebab-case.")
+                    .font(Japandi.Typography.caption)
+                    .foregroundStyle(Japandi.Colors.textTertiaryFB)
+            }
+
+            TextField("e.g. tax-2025", text: $newTagText)
+                .textFieldStyle(.roundedBorder)
+                .onSubmit { commitNewTag() }
+
+            HStack {
+                Spacer()
+                Button("Cancel") {
+                    showAddTagSheet = false
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Japandi.Colors.textSecondaryFB)
+                .keyboardShortcut(.cancelAction)
+
+                Button("Add") {
+                    commitNewTag()
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Japandi.Colors.accentFallback)
+                .keyboardShortcut(.defaultAction)
+                .disabled(newTagText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .padding(Japandi.Spacing.lg)
+        .frame(width: 340)
+    }
+
+    /// Normalize the typed name, find or create the Tag row, and attach it.
+    /// Posts `.tagsDidChange` so the sidebar / library count refresh.
+    private func commitNewTag() {
+        let normalized = newTagText
+            .lowercased()
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { !$0.isEmpty }
+            .prefix(4)
+            .joined(separator: "-")
+        guard !normalized.isEmpty else { return }
+
+        let predicate = #Predicate<Tag> { $0.name == normalized }
+        let descriptor = FetchDescriptor<Tag>(predicate: predicate)
+        let existing = try? modelContext.fetch(descriptor).first
+
+        let tag = existing ?? Tag(
+            name: normalized,
+            colorHex: Tag.defaultColors.randomElement() ?? "3E5C4A"
+        )
+        if existing == nil { modelContext.insert(tag) }
+
+        if document.tags == nil { document.tags = [] }
+        if !(document.tags?.contains(where: { $0.name == normalized }) ?? false) {
+            document.tags?.append(tag)
+        }
+        document.modifiedAt = .now
+        document.rebuildSearchableText()
+        try? modelContext.save()
+
+        newTagText = ""
+        showAddTagSheet = false
+        NotificationCenter.default.post(name: .tagsDidChange, object: nil)
     }
 
     /// Strip every tag attachment off this document without touching the

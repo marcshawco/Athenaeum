@@ -65,6 +65,9 @@ struct ContentView: View {
             guard let docID = note.userInfo?["documentID"] as? UUID else { return }
             jumpToDocument(id: docID)
         }
+        .onReceive(NotificationCenter.default.publisher(for: .closeInspector)) { _ in
+            showDetailPanel = false
+        }
         .onReceive(NotificationCenter.default.publisher(for: .openSettings)) { _ in
             showSettings = true
         }

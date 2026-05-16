@@ -5,6 +5,12 @@ import SwiftData
 struct AthenaeumApp: App {
     @AppStorage("appearance") private var appearance: AppAppearance = .system
 
+    init() {
+        // Re-apply the user's chosen app-icon variant on every cold launch
+        // so the Dock + Cmd-Tab tile match what they picked in Settings.
+        AppIconApplier.applyFromDefaults()
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView()
@@ -70,4 +76,6 @@ extension Notification.Name {
     /// Sent when a chat source is clicked. userInfo["documentID"] = UUID.
     /// ContentView routes back to the library and selects the target.
     static let selectDocumentByID = Notification.Name("selectDocumentByID")
+    /// Posted by the inspector's close (✕) button.
+    static let closeInspector = Notification.Name("closeInspector")
 }

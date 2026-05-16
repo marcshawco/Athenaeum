@@ -218,6 +218,10 @@ struct SettingsView: View {
                 }
             }
 
+            Section("App Icon") {
+                appIconPicker
+            }
+
             Section("Import") {
                 Text("Imported files and documents added to the vault are processed automatically.")
                     .font(Japandi.Typography.caption)
@@ -225,6 +229,67 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
+    }
+
+    // MARK: - App icon picker
+
+    /// Persisted choice. Applied live via `NSApplication.shared
+    /// .applicationIconImage` so the Dock + Cmd-Tab tile update without
+    /// a relaunch, and re-applied on every launch from `AthenaeumApp`.
+    @AppStorage("appIconVariant") private var appIconVariantRaw: String = AppIconVariant.ink.rawValue
+
+    private var currentIconVariant: AppIconVariant {
+        AppIconVariant(rawValue: appIconVariantRaw) ?? .ink
+    }
+
+    private var appIconPicker: some View {
+        VStack(alignment: .leading, spacing: Japandi.Spacing.xs) {
+            HStack(spacing: Japandi.Spacing.md) {
+                ForEach(AppIconVariant.allCases) { variant in
+                    appIconChoice(variant)
+                }
+                Spacer()
+            }
+            Text("Changes the Dock icon and Cmd-Tab tile while Athenaeum is running. The Finder icon picks the new image up on next quit/relaunch.")
+                .font(Japandi.Typography.caption)
+                .foregroundStyle(Japandi.Colors.textTertiaryFB)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func appIconChoice(_ variant: AppIconVariant) -> some View {
+        let isSelected = currentIconVariant == variant
+        return Button {
+            appIconVariantRaw = variant.rawValue
+            AppIconApplier.apply(variant)
+        } label: {
+            VStack(spacing: 6) {
+                Image(variant.assetName)
+                    .resizable()
+                    .interpolation(.high)
+                    .frame(width: 56, height: 56)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .strokeBorder(
+                                isSelected
+                                    ? Japandi.Colors.accentFallback
+                                    : Japandi.Colors.borderFallback,
+                                lineWidth: isSelected ? 1.5 : 0.5
+                            )
+                    )
+                Text(variant.displayName)
+                    .font(.system(size: 11, weight: isSelected ? .medium : .regular))
+                    .foregroundStyle(isSelected
+                                     ? Japandi.Colors.textPrimaryFB
+                                     : Japandi.Colors.textSecondaryFB)
+            }
+            .frame(width: 80)
+            .padding(.vertical, 4)
+        }
+        .buttonStyle(.plain)
+        .help(variant.helpText)
+        .accessibilityLabel("\(variant.displayName) app icon")
     }
 
     // MARK: - AI
