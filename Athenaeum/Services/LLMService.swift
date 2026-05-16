@@ -279,16 +279,35 @@ enum TaggingPrompts {
     static func classifyDocument(text: String, existingTags: [String]) -> String {
         let availableTags = Array(Set(Tag.builtInPool + existingTags)).sorted()
         let tagList = availableTags.joined(separator: ", ")
+
+        // Compact representation of the 500-type taxonomy: one line per category
+        // listing its type slugs. This gives the local LLM a structured menu of
+        // canonical document types to pick from.
+        let taxonomy = DocumentTaxonomy.categories.map { cat in
+            "- \(cat.slug): " + cat.types.map(\.slug).joined(separator: ", ")
+        }.joined(separator: "\n")
+
         return """
         You are Athenaeum's local document filing assistant. Analyze the document text and return a JSON object with exactly these keys:
         - "title": concise descriptive title (string)
-        - "tags": 2-6 relevant tags array using kebab-case strings. Prefer the controlled vocabulary in this pool before inventing a new tag: [\(tagList)]
-        - "correspondent": author or sender if identifiable (string or null)
-        - "date": document date in YYYY-MM-DD format if found (string or null)
-        - "summary": 1-2 sentence summary (string)
+        - "document_type": the single most specific slug from the taxonomy below that describes this document (string). Use kebab-case slug exactly as listed. If nothing fits, use null.
+        - "category": the parent category slug from the taxonomy (string). Must be a category from the list. Null only if document_type is null.
+        - "tags": 2-6 supporting tag slugs (array of kebab-case strings). Prefer the controlled vocabulary pool before inventing new tags. Do not duplicate the document_type slug here.
+        - "correspondent": author, sender, or issuing organization if identifiable (string or null)
+        - "date": document date in YYYY-MM-DD format if found in the document (string or null)
+        - "summary": 1-2 sentence summary of what the document is and what it accomplishes (string)
 
-        Always assign at least two tags. Include one document-type tag such as invoice, receipt, contract, tax, medical, legal, correspondence, report, form, pdf, image, spreadsheet, or document when applicable. Do not use vague tags when a more specific vocabulary tag fits.
-        Respond with ONLY valid JSON. No markdown, no explanation.
+        DOCUMENT TAXONOMY (pick document_type from these slugs; pick category from the category slug at the start of each line):
+        \(taxonomy)
+
+        SUPPORTING TAG POOL (use for the "tags" array):
+        [\(tagList)]
+
+        Rules:
+        - Always pick a "document_type" if the text resembles any taxonomy entry, even loosely. Specificity beats vagueness — prefer "lease-agreement" over "contract" if it's a lease.
+        - "category" must be the parent category slug of the chosen document_type.
+        - Always assign at least two tags in "tags". Use the supporting pool; do not repeat the document_type slug.
+        - Respond with ONLY valid JSON. No markdown, no explanation, no trailing commas.
 
         Document text:
         \(String(text.prefix(4000)))

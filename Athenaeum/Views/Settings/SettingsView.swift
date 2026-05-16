@@ -9,6 +9,7 @@ struct SettingsView: View {
     @AppStorage("chunkOverlap") private var chunkOverlap = 64
     @AppStorage("maxGPULayers") private var maxGPULayers = -1
     @AppStorage("contextSize") private var contextSize = 4096
+    @AppStorage("inferenceEngine") private var inferenceEngineRaw: String = InferenceEngine.llamaCpp.rawValue
     @State private var vaultPath = DocumentVaultService.shared.vaultURL.path
     @State private var selection: SettingsTab = .general
 
@@ -215,6 +216,8 @@ struct SettingsView: View {
 
     private var aiTab: some View {
         VStack(alignment: .leading, spacing: Japandi.Spacing.lg) {
+            inferenceEngineCard
+
             hardwareAnalyzerCard
 
             presetCard
@@ -253,6 +256,107 @@ struct SettingsView: View {
             .frame(maxWidth: .infinity)
             .scrollDisabled(true)
         }
+    }
+
+    // MARK: - Inference engine
+
+    private var inferenceEngine: InferenceEngine {
+        InferenceEngine(rawValue: inferenceEngineRaw) ?? .llamaCpp
+    }
+
+    private var inferenceEngineCard: some View {
+        VStack(alignment: .leading, spacing: Japandi.Spacing.sm) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Inference Engine")
+                    .font(.system(size: 13, weight: .medium, design: .serif))
+                    .foregroundStyle(Japandi.Colors.textPrimaryFB)
+                Spacer()
+                if inferenceEngine == .mlx {
+                    Text("EXPERIMENTAL")
+                        .font(.system(size: 9, design: .monospaced))
+                        .tracking(1.5)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Japandi.Colors.warmSoftFallback)
+                        .foregroundStyle(Japandi.Colors.warmFallback)
+                        .clipShape(Capsule())
+                }
+            }
+
+            HStack(spacing: Japandi.Spacing.sm) {
+                ForEach(InferenceEngine.allCases, id: \.rawValue) { engine in
+                    engineOption(engine)
+                }
+            }
+
+            if inferenceEngine == .mlx {
+                HStack(spacing: Japandi.Spacing.xs) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Japandi.Colors.warmFallback)
+                    Text("MLX runtime ships in a future build. You can download the recommended bundle below today, but tagging and chat run on llama.cpp until the runtime lands.")
+                        .font(Japandi.Typography.caption)
+                        .foregroundStyle(Japandi.Colors.textSecondaryFB)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(Japandi.Spacing.xs)
+                .background(Japandi.Colors.warmSoftFallback.opacity(0.5))
+                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            }
+        }
+        .padding(Japandi.Spacing.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Japandi.Colors.surfaceRaisedFB)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(Japandi.Colors.borderFallback, lineWidth: 0.5)
+        )
+    }
+
+    private func engineOption(_ engine: InferenceEngine) -> some View {
+        let isSelected = inferenceEngine == engine
+        return Button {
+            inferenceEngineRaw = engine.rawValue
+        } label: {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 4) {
+                    Image(systemName: engine == .mlx ? "sparkles" : "cpu")
+                        .font(.system(size: 11))
+                        .foregroundStyle(isSelected
+                                         ? Japandi.Colors.accentFallback
+                                         : Japandi.Colors.textSecondaryFB)
+                    Text(engine.displayName)
+                        .font(.system(size: 12.5, weight: .medium))
+                        .foregroundStyle(Japandi.Colors.textPrimaryFB)
+                    if isSelected {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 10))
+                            .foregroundStyle(Japandi.Colors.accentFallback)
+                    }
+                }
+                Text(engine.summary)
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(Japandi.Colors.textTertiaryFB)
+                    .multilineTextAlignment(.leading)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(Japandi.Spacing.sm)
+            .frame(maxWidth: .infinity, minHeight: 56, alignment: .topLeading)
+            .background(isSelected
+                        ? Japandi.Colors.washFallback
+                        : Japandi.Colors.bgFallback)
+            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .strokeBorder(isSelected
+                                  ? Japandi.Colors.accentFallback
+                                  : Japandi.Colors.borderFallback,
+                                  lineWidth: isSelected ? 1 : 0.5)
+            )
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Hardware analyzer + presets

@@ -29,6 +29,13 @@ final class Document {
     var importedAt: Date
     var modifiedAt: Date
 
+    // MARK: - Taxonomy (Top-500 reference)
+    /// Slug from `DocumentTaxonomy.allTypeSlugs` — e.g. "lease-agreement", "irs-form-1040".
+    /// Lets us render a precise "Lease Agreement" pill instead of a generic "contract" tag.
+    var documentTypeSlug: String?
+    /// Slug from `DocumentTaxonomy.allCategorySlugs` — e.g. "real-estate-property-documents".
+    var categorySlug: String?
+
     // MARK: - Processing State
     var processingStatus: ProcessingStatus
     var processingError: String?
@@ -83,6 +90,21 @@ enum ProcessingStatus: String, Codable, Sendable {
 // MARK: - Convenience
 
 extension Document {
+    /// Resolved display name for the taxonomy type — e.g. "Lease Agreement".
+    var documentTypeName: String? {
+        documentTypeSlug.flatMap { DocumentTaxonomy.type(forSlug: $0)?.name }
+    }
+
+    /// Resolved display name for the taxonomy category — e.g. "Real Estate & Property Documents".
+    var categoryName: String? {
+        categorySlug.flatMap { DocumentTaxonomy.category(forSlug: $0)?.name }
+    }
+
+    /// Short purpose blurb for the resolved type (from the reference guide).
+    var documentTypePurpose: String? {
+        documentTypeSlug.flatMap { DocumentTaxonomy.type(forSlug: $0)?.purpose }
+    }
+
     var fileSizeFormatted: String {
         ByteCountFormatter.string(fromByteCount: fileSize, countStyle: .file)
     }

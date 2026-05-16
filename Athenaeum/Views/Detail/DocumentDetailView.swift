@@ -101,6 +101,35 @@ struct DocumentDetailView: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
+
+            // Taxonomy badges — resolved Document Type and parent Category from
+            // the local LLM, anchored to the canonical 500-type reference list.
+            if let typeName = document.documentTypeName {
+                HStack(spacing: Japandi.Spacing.xxs) {
+                    Image(systemName: "books.vertical")
+                        .font(.system(size: 9))
+                        .foregroundStyle(Japandi.Colors.inspectorAccent)
+                    Text(typeName)
+                        .font(.system(size: 11, weight: .medium, design: .serif))
+                        .foregroundStyle(Japandi.Colors.inspectorInk)
+                    if let categoryName = document.categoryName {
+                        Text("·")
+                            .foregroundStyle(Japandi.Colors.inspectorInk3)
+                        Text(categoryName)
+                            .font(.system(size: 10.5))
+                            .foregroundStyle(Japandi.Colors.inspectorInk2)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
+                }
+                .padding(.horizontal, 9)
+                .padding(.vertical, 4)
+                .background(Color.white.opacity(0.04))
+                .clipShape(Capsule())
+                .overlay(
+                    Capsule().strokeBorder(Japandi.Colors.inspectorRule, lineWidth: 0.5)
+                )
+            }
         }
         .padding(.horizontal, 22)
         .padding(.vertical, 18)

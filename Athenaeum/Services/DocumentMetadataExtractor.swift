@@ -20,19 +20,33 @@ struct DocumentClassification: Codable, Sendable {
     var correspondent: String?
     var date: String?
     var summary: String?
+    /// Slug from the canonical 500-type taxonomy (see `DocumentTaxonomy`).
+    var documentType: String?
+    /// Slug of the parent taxonomy category.
+    var category: String?
+
+    enum CodingKeys: String, CodingKey {
+        case title, tags, correspondent, date, summary
+        case documentType = "document_type"
+        case category
+    }
 
     init(
         title: String? = nil,
         tags: [String] = [],
         correspondent: String? = nil,
         date: String? = nil,
-        summary: String? = nil
+        summary: String? = nil,
+        documentType: String? = nil,
+        category: String? = nil
     ) {
         self.title = title
         self.tags = tags
         self.correspondent = correspondent
         self.date = date
         self.summary = summary
+        self.documentType = documentType
+        self.category = category
     }
 }
 

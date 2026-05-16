@@ -446,9 +446,50 @@ final class DocumentProcessor {
             document.documentDate = date
         }
 
+        // Resolve taxonomy fields against the canonical 500-type list. The LLM
+        // sometimes invents a slug or returns the display name — sanitize both.
+        if let rawType = classification.documentType?.nilIfBlank {
+            let typeSlug = canonicalize(rawType)
+            if let type = DocumentTaxonomy.type(forSlug: typeSlug) {
+                document.documentTypeSlug = type.slug
+                // Snap the category to the type's actual parent (LLM may
+                // disagree with the canonical mapping).
+                document.categorySlug = DocumentTaxonomy.category(containingTypeSlug: type.slug)?.slug
+            }
+        }
+        // If type was missing/invalid but category resolves on its own, keep it.
+        if document.categorySlug == nil, let rawCategory = classification.category?.nilIfBlank {
+            let catSlug = canonicalize(rawCategory)
+            if let cat = DocumentTaxonomy.category(forSlug: catSlug) {
+                document.categorySlug = cat.slug
+            }
+        }
+
         for tagName in classification.tags {
             attachTag(named: tagName, to: document)
         }
+
+        // Also attach the document_type as a tag so it shows up in search/filtering.
+        if let typeSlug = document.documentTypeSlug {
+            attachTag(named: typeSlug, to: document)
+        }
+    }
+
+    /// Loose normalizer for slugs returned by the LLM: lowercases, replaces
+    /// whitespace/underscores with hyphens, strips anything outside [a-z0-9-].
+    private func canonicalize(_ raw: String) -> String {
+        let lowered = raw.lowercased()
+        let mapped = lowered.unicodeScalars.map { scalar -> Character in
+            if CharacterSet.lowercaseLetters.contains(scalar) ||
+                CharacterSet.decimalDigits.contains(scalar) ||
+                scalar == "-" {
+                return Character(scalar)
+            }
+            return "-"
+        }
+        return String(mapped)
+            .split(separator: "-", omittingEmptySubsequences: true)
+            .joined(separator: "-")
     }
 
     private func attachTag(named rawName: String, to document: Document) {

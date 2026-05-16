@@ -8,6 +8,12 @@ struct ModelStatusView: View {
     /// Confirmation state for destructive uninstall actions.
     @State private var uninstallTarget: LLMModelDescriptor?
 
+    // MLX bundle state — separate manager/downloader because MLX bundles are
+    // multi-file directories, unrelated to the GGUF role-keyed pipeline.
+    @State private var mlxManager = MLXModelManager()
+    @State private var mlxDownloader: MLXBundleDownloader?
+    @State private var mlxUninstallTarget: MLXBundleDescriptor?
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Japandi.Spacing.lg) {
@@ -73,15 +79,42 @@ struct ModelStatusView: View {
                     )
                 }
 
+                // MLX bundles (experimental, optional)
+                mlxBundleSection
+
                 // Instructions
                 instructionsCard
             }
             .padding(Japandi.Spacing.lg)
         }
         .background(Japandi.Colors.bgFallback)
-        .onAppear { modelManager.scanForModels() }
+        .onAppear {
+            modelManager.scanForModels()
+            if mlxDownloader == nil { mlxDownloader = MLXBundleDownloader(manager: mlxManager) }
+            mlxManager.scan()
+        }
         .onReceive(NotificationCenter.default.publisher(for: .modelsDidChange)) { _ in
             modelManager.scanForModels()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .mlxBundlesDidChange)) { _ in
+            mlxManager.scan()
+        }
+        .confirmationDialog(
+            mlxUninstallTarget.map { "Uninstall \($0.displayName)?" } ?? "Uninstall MLX bundle?",
+            isPresented: Binding(
+                get: { mlxUninstallTarget != nil },
+                set: { if !$0 { mlxUninstallTarget = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: mlxUninstallTarget
+        ) { descriptor in
+            Button("Uninstall", role: .destructive) {
+                mlxManager.uninstall(descriptor)
+                mlxUninstallTarget = nil
+            }
+            Button("Cancel", role: .cancel) { mlxUninstallTarget = nil }
+        } message: { descriptor in
+            Text("This deletes the entire MLX bundle directory (~\(ByteCountFormatter.string(fromByteCount: descriptor.expectedSize, countStyle: .file))). You can re-download it any time.")
         }
         .confirmationDialog(
             uninstallTarget.map { "Uninstall \($0.displayName)?" } ?? "Uninstall model?",
@@ -165,6 +198,166 @@ struct ModelStatusView: View {
         .padding(Japandi.Spacing.md)
         .frame(maxWidth: .infinity)
         .premiumPane()
+    }
+
+    // MARK: - MLX bundle section
+
+    @ViewBuilder
+    private var mlxBundleSection: some View {
+        VStack(alignment: .leading, spacing: Japandi.Spacing.sm) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("MLX Bundle")
+                        .eyebrowStyle(Japandi.Colors.accentFallback)
+                    Text("Recommended Apple silicon model")
+                        .font(Japandi.Typography.title)
+                        .foregroundStyle(Japandi.Colors.textPrimaryFB)
+                    Text("A curated MLX bundle optimized for document tagging and Q&A on Apple silicon. Download today; inference runtime arrives in a future build.")
+                        .font(Japandi.Typography.caption)
+                        .foregroundStyle(Japandi.Colors.textSecondaryFB)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer()
+            }
+
+            ForEach(MLXBundleDescriptor.all, id: \.id) { descriptor in
+                mlxBundleCard(descriptor)
+            }
+        }
+    }
+
+    private func mlxBundleCard(_ descriptor: MLXBundleDescriptor) -> some View {
+        let installed = mlxManager.installedBundles[descriptor.id]
+        let state = mlxDownloader?.states[descriptor.id]
+        let isDownloading = state?.status == .downloading
+
+        return VStack(spacing: Japandi.Spacing.sm) {
+            HStack(spacing: Japandi.Spacing.md) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: Japandi.Radius.sm, style: .continuous)
+                        .fill(Japandi.Colors.accentFallback.opacity(0.10))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: Japandi.Radius.sm, style: .continuous)
+                                .strokeBorder(Japandi.Colors.accentFallback.opacity(0.20), lineWidth: 0.5)
+                        )
+                        .frame(width: 42, height: 42)
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 18, weight: .ultraLight))
+                        .foregroundStyle(Japandi.Colors.accentFallback)
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(descriptor.displayName)
+                        .font(Japandi.Typography.headline)
+                        .foregroundStyle(Japandi.Colors.textPrimaryFB)
+                    Text(descriptor.summary)
+                        .font(Japandi.Typography.caption)
+                        .foregroundStyle(Japandi.Colors.textSecondaryFB)
+                    HStack(spacing: Japandi.Spacing.xs) {
+                        MetadataBadge(text: descriptor.repoID)
+                        MetadataBadge(text: ByteCountFormatter.string(
+                            fromByteCount: installed?.totalBytes ?? descriptor.expectedSize,
+                            countStyle: .file
+                        ))
+                        ForEach(Array(descriptor.roles), id: \.self) { role in
+                            MetadataBadge(text: role.rawValue)
+                        }
+                    }
+                }
+
+                Spacer()
+
+                VStack(alignment: .trailing, spacing: Japandi.Spacing.xs) {
+                    HStack(spacing: Japandi.Spacing.xxs) {
+                        Circle()
+                            .fill(installed != nil
+                                  ? Japandi.Colors.accentFallback
+                                  : Japandi.Colors.borderFallback)
+                            .frame(width: 6, height: 6)
+                        Text(installed != nil ? "Installed" : (isDownloading ? "Downloading" : "Not installed"))
+                            .font(Japandi.Typography.caption)
+                            .foregroundStyle(Japandi.Colors.textTertiaryFB)
+                    }
+
+                    HStack(spacing: Japandi.Spacing.xs) {
+                        if installed == nil && !isDownloading {
+                            Button("Download") {
+                                mlxDownloader?.startDownload(descriptor)
+                            }
+                            .font(Japandi.Typography.caption)
+                            .buttonStyle(.borderedProminent)
+                            .tint(Japandi.Colors.accentFallback)
+                            .controlSize(.small)
+                        }
+
+                        if installed != nil {
+                            Menu {
+                                Button {
+                                    NSWorkspace.shared.open(mlxManager.directory(for: descriptor))
+                                } label: {
+                                    Label("Reveal in Finder", systemImage: "folder")
+                                }
+                                Button {
+                                    mlxManager.uninstall(descriptor)
+                                    mlxDownloader?.startDownload(descriptor)
+                                } label: {
+                                    Label("Reinstall", systemImage: "arrow.clockwise")
+                                }
+                                Divider()
+                                Button(role: .destructive) {
+                                    mlxUninstallTarget = descriptor
+                                } label: {
+                                    Label("Uninstall", systemImage: "trash")
+                                }
+                            } label: {
+                                Image(systemName: "ellipsis.circle")
+                                    .font(.system(size: 14, weight: .light))
+                                    .foregroundStyle(Japandi.Colors.textSecondaryFB)
+                            }
+                            .menuStyle(.borderlessButton)
+                            .menuIndicator(.hidden)
+                            .fixedSize()
+                        }
+                    }
+                }
+            }
+
+            if let state, state.status == .downloading {
+                VStack(spacing: Japandi.Spacing.xxs) {
+                    ProgressView(value: state.progress)
+                        .tint(Japandi.Colors.accentFallback)
+                    HStack {
+                        Text(ByteCountFormatter.string(fromByteCount: state.bytesWritten, countStyle: .file))
+                        Spacer()
+                        Text(state.currentFile)
+                            .font(.system(size: 9.5, design: .monospaced))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Spacer()
+                        Button {
+                            mlxDownloader?.cancelDownload(descriptor)
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 9))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .font(Japandi.Typography.caption)
+                    .foregroundStyle(Japandi.Colors.textTertiaryFB)
+                }
+            } else if let state, state.status == .failed, let message = state.failureMessage {
+                HStack(spacing: Japandi.Spacing.xs) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.system(size: 10))
+                    Text(message)
+                        .lineLimit(2)
+                }
+                .font(Japandi.Typography.caption)
+                .foregroundStyle(Japandi.Colors.warmFallback)
+            }
+        }
+        .padding(Japandi.Spacing.md)
+        .japandiCard()
     }
 
     // MARK: - Instructions
