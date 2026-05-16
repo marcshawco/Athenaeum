@@ -850,7 +850,7 @@ struct ChatBubble: View {
         }
         .padding(.horizontal, Japandi.Spacing.md)
         .padding(.vertical, Japandi.Spacing.sm)
-        .background(Japandi.Colors.inkFallback)
+        .background(Japandi.Colors.inkSolidFallback)
         .clipShape(RoundedRectangle(cornerRadius: Japandi.Radius.md, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: Japandi.Radius.md, style: .continuous)

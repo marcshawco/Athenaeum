@@ -137,7 +137,7 @@ struct DocumentGridView: View {
                 .foregroundStyle(.white)
                 .padding(.horizontal, Japandi.Spacing.sm)
                 .frame(height: 28)
-                .background(Japandi.Colors.inkFallback)
+                .background(Japandi.Colors.inkSolidFallback)
                 .clipShape(RoundedRectangle(cornerRadius: Japandi.Radius.sm, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: Japandi.Radius.sm, style: .continuous)
@@ -396,10 +396,10 @@ struct DocumentCardView: View {
                 Text(document.fileExtension.uppercased().isEmpty ? "FILE" : document.fileExtension.uppercased())
                     .font(Japandi.Typography.eyebrow)
                     .tracking(1)
-                    .foregroundStyle(Japandi.Colors.surfaceRaisedFB)
+                    .foregroundStyle(.white)
                     .padding(.horizontal, 7)
                     .padding(.vertical, 4)
-                    .background(Japandi.Colors.inkFallback.opacity(0.88))
+                    .background(Japandi.Colors.inkSolidFallback.opacity(0.88))
                     .clipShape(RoundedRectangle(cornerRadius: Japandi.Radius.sm, style: .continuous))
                     .padding(Japandi.Spacing.xs)
             }

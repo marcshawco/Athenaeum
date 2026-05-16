@@ -40,8 +40,15 @@ enum Japandi {
         static let textSecondaryFB     = Color(light: 0x5A554D, dark: 0xB7C2B0)
         static let textTertiaryFB      = Color(light: 0x9C968B, dark: 0x8FA395)
         static let borderFallback      = Color(light: 0xE6E1D5, dark: 0x3A332B)
-        // inkFallback — deepest ink, used for glyph chips and brand mark.
+        // inkFallback — deepest ink as *text* color. Flips to near-paper
+        // in dark mode so body copy stays legible against a dark background.
         static let inkFallback         = Color(light: 0x211F1B, dark: 0xEDEFE6)
+        // inkSolidFallback — the same warm charcoal as `inkFallback` but
+        // *does not invert* with the system appearance. Use for surfaces
+        // that always need to read as "deep ink" (user chat bubbles,
+        // primary CTA buttons, brand chip backgrounds) so white text
+        // on top stays readable in both light and dark mode.
+        static let inkSolidFallback    = Color(light: 0x1A1614, dark: 0x1A1614)
         // mineralFallback — warm clay (OCR badges, secondary accent).
         static let mineralFallback     = Color(light: 0xB98A4F, dark: 0xB98A4F)
         // lacquerFallback — warm dark (status/destructive subtle).
