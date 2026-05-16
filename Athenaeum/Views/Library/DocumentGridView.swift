@@ -169,20 +169,38 @@ struct DocumentGridView: View {
 
     private var gridContent: some View {
         ScrollView {
-            ZStack(alignment: .topLeading) {
-                LazyVGrid(
-                    columns: [GridItem(.adaptive(minimum: 210, maximum: 260), spacing: Japandi.Spacing.lg)],
-                    spacing: Japandi.Spacing.lg
-                ) {
-                    ForEach(filteredDocuments) { document in
-                        cardCell(for: document)
-                    }
+            // The grid itself owns the "grid" coordinate space so its
+            // intrinsic height drives layout (instead of a sibling ZStack
+            // wrapper that was making cards bleed above the row when the
+            // window shrunk). Marquee + gesture catcher attach as
+            // overlay/background — they take their geometry from the grid.
+            LazyVGrid(
+                columns: [GridItem(.adaptive(minimum: 210, maximum: 260), spacing: Japandi.Spacing.lg)],
+                spacing: Japandi.Spacing.lg
+            ) {
+                ForEach(filteredDocuments) { document in
+                    cardCell(for: document)
                 }
-                .padding(.horizontal, Japandi.Spacing.lg)
-                .padding(.vertical, Japandi.Spacing.lg)
-                .coordinateSpace(name: "grid")
-
-                // Marquee rectangle drawn in the grid's coordinate space.
+            }
+            .padding(.horizontal, Japandi.Spacing.lg)
+            .padding(.vertical, Japandi.Spacing.lg)
+            .coordinateSpace(name: "grid")
+            .background(
+                // Click on empty space → drop selection. Sits *behind*
+                // the cards so card taps still win.
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        if !selectedDocuments.isEmpty {
+                            selectedDocuments.removeAll()
+                        }
+                    }
+                    .gesture(marqueeGesture)
+            )
+            .overlay(alignment: .topLeading) {
+                // Marquee rectangle drawn over the grid in its own
+                // coordinate space. `.overlay` does NOT expand the parent
+                // — that was the cause of the earlier overlap.
                 if let rect = marqueeRect {
                     Rectangle()
                         .fill(Japandi.Colors.accentFallback.opacity(0.10))
@@ -195,20 +213,6 @@ struct DocumentGridView: View {
                         .allowsHitTesting(false)
                 }
             }
-            .coordinateSpace(name: "grid")
-            // The background catches drag gestures that start on empty
-            // space between cards so the marquee actually fires.
-            .background(
-                Color.clear
-                    .contentShape(Rectangle())
-                    .gesture(marqueeGesture)
-                    .onTapGesture {
-                        // Click on empty space — clear multi-selection.
-                        if !selectedDocuments.isEmpty {
-                            selectedDocuments.removeAll()
-                        }
-                    }
-            )
             .onPreferenceChange(CardFramePreferenceKey.self) { frames in
                 cardFrames = frames
             }
