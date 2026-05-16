@@ -143,14 +143,7 @@ struct SidebarView: View {
                         .contentShape(Rectangle())
                     }
                 } header: {
-                    HStack {
-                        Text("Tags")
-                            .eyebrowStyle()
-                        Spacer()
-                        Text("\(tags.count)")
-                            .font(Japandi.Typography.eyebrow)
-                            .foregroundStyle(Japandi.Colors.textTertiaryFB)
-                    }
+                    sectionHeader(title: "Tags", count: visibleTags.count)
                 }
             }
 
@@ -180,14 +173,7 @@ struct SidebarView: View {
                         .contentShape(Rectangle())
                     }
                 } header: {
-                    HStack {
-                        Text("By Category")
-                            .eyebrowStyle()
-                        Spacer()
-                        Text("\(categoriesWithDocs.count)")
-                            .font(Japandi.Typography.eyebrow)
-                            .foregroundStyle(Japandi.Colors.textTertiaryFB)
-                    }
+                    sectionHeader(title: "By Category", count: categoriesWithDocs.count)
                 }
             }
 
@@ -263,6 +249,22 @@ struct SidebarView: View {
             }
             .background(Japandi.Colors.bgFallback)
         }
+    }
+
+    /// Eyebrow-styled section header with the count rendered inline as
+    /// `TAGS · 6` instead of orphan-floated to the trailing edge of the
+    /// row. Keeps the count visually anchored to the title.
+    private func sectionHeader(title: String, count: Int) -> some View {
+        (
+            Text(title.uppercased())
+                .tracking(2)
+                .foregroundStyle(Japandi.Colors.textTertiaryFB)
+            +
+            Text(" · \(count)")
+                .tracking(1)
+                .foregroundStyle(Japandi.Colors.textTertiaryFB.opacity(0.6))
+        )
+        .font(Japandi.Typography.eyebrow)
     }
 
     // MARK: - Sidebar Row Helper

@@ -68,6 +68,16 @@ struct ChatMessage: Identifiable, Sendable {
         self.content = content
         self.timestamp = .now
     }
+
+    /// Explicit-id initializer for round-tripping persisted messages out of
+    /// `ChatConversation.messagesJSON` so `id` stays stable across launches
+    /// (matters for per-message source dictionaries and SwiftUI list IDs).
+    init(id: UUID, role: ChatRole, content: String, timestamp: Date) {
+        self.id = id
+        self.role = role
+        self.content = content
+        self.timestamp = timestamp
+    }
 }
 
 enum ChatRole: String, Sendable, Codable {

@@ -115,6 +115,13 @@ struct DocumentContextMenu: ViewModifier {
                     Label("Reprocess", systemImage: "arrow.clockwise")
                 }
 
+                Button {
+                    clearTags()
+                } label: {
+                    Label("Clear Tags", systemImage: "tag.slash")
+                }
+                .disabled((document.tags ?? []).isEmpty)
+
                 Divider()
 
                 // Destructive
@@ -230,6 +237,17 @@ struct DocumentContextMenu: ViewModifier {
            let contentView = window.contentView {
             picker.show(relativeTo: .zero, of: contentView, preferredEdge: .minY)
         }
+    }
+
+    /// Strip every tag attachment off this document without touching the
+    /// Tag rows themselves (other documents may still own them). Useful when
+    /// the LLM mis-tagged something and you want to start fresh.
+    private func clearTags() {
+        document.tags?.removeAll()
+        document.modifiedAt = .now
+        document.rebuildSearchableText()
+        try? modelContext.save()
+        NotificationCenter.default.post(name: .tagsDidChange, object: nil)
     }
 
     private func reprocessDocument() {

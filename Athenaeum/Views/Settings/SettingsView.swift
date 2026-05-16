@@ -574,10 +574,30 @@ struct SettingsView: View {
                     }
                     if let report = integrityReport {
                         integrityResultView(report)
+                    } else if integrityChecking {
+                        HStack(spacing: 6) {
+                            Image(systemName: "ellipsis")
+                                .font(.system(size: 10))
+                                .foregroundStyle(Japandi.Colors.textTertiaryFB)
+                            Text("Walking the vault…")
+                                .font(Japandi.Typography.caption)
+                                .foregroundStyle(Japandi.Colors.textTertiaryFB)
+                        }
+                    } else {
+                        // Helpful placeholder so the section doesn't render as
+                        // an empty band sandwiched between the title and the
+                        // next row. Disappears the first time a check is run.
+                        HStack(spacing: 6) {
+                            Image(systemName: "info.circle")
+                                .font(.system(size: 10))
+                                .foregroundStyle(Japandi.Colors.textTertiaryFB)
+                            Text("No check has run yet. Athenaeum will list any documents whose vault files have gone missing.")
+                                .font(Japandi.Typography.caption)
+                                .foregroundStyle(Japandi.Colors.textTertiaryFB)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                     }
                 }
-
-                Divider().foregroundStyle(Japandi.Colors.borderFallback)
 
                 VStack(alignment: .leading, spacing: Japandi.Spacing.xs) {
                     HStack {
@@ -691,19 +711,24 @@ struct SettingsView: View {
 
     @Environment(\.modelContext) private var integrityContext
 
+    /// The integrity check is a fast in-memory SwiftData fetch plus a few
+    /// `FileManager.fileExists` syscalls. There's no reason to detach to a
+    /// background actor — ModelContext isn't Sendable, and shoving it across
+    /// the main-actor boundary is what Swift 6 strict concurrency flags.
+    /// Run it inline on the main actor with a brief progress indicator.
     private func runIntegrityCheck() {
         integrityChecking = true
-        Task.detached(priority: .userInitiated) {
-            let report = await Self.performIntegrityCheck(context: integrityContext)
-            await MainActor.run {
-                integrityReport = report
-                integrityChecking = false
-            }
+        Task { @MainActor in
+            // Yield once so the spinner gets a chance to paint before we
+            // start hammering the disk in the same run loop tick.
+            await Task.yield()
+            integrityReport = performIntegrityCheck(context: integrityContext)
+            integrityChecking = false
         }
     }
 
     @MainActor
-    private static func performIntegrityCheck(context: ModelContext) async -> VaultIntegrityReport {
+    private func performIntegrityCheck(context: ModelContext) -> VaultIntegrityReport {
         let fetch = FetchDescriptor<Document>()
         let docs = (try? context.fetch(fetch)) ?? []
         var missing: [(title: String, path: String)] = []

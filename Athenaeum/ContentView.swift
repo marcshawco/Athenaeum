@@ -61,6 +61,10 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .autoScanFoldersDidChange)) { _ in
             autoScanCoordinator?.restart()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .selectDocumentByID)) { note in
+            guard let docID = note.userInfo?["documentID"] as? UUID else { return }
+            jumpToDocument(id: docID)
+        }
         .onReceive(NotificationCenter.default.publisher(for: .openSettings)) { _ in
             showSettings = true
         }
@@ -219,6 +223,25 @@ struct ContentView: View {
                 && !indexed.contains(doc.id)
         }
         await MainActor.run { reindexCandidates = candidates.count }
+    }
+
+    /// Bring the library tab forward and select the requested document. Used
+    /// by the NotebookLM-style source chips in chat — click a citation and
+    /// the inspector slides over with the matching document loaded.
+    private func jumpToDocument(id: UUID) {
+        let fetch = FetchDescriptor<Document>(
+            predicate: #Predicate<Document> { $0.id == id }
+        )
+        guard let doc = try? modelContext.fetch(fetch).first else { return }
+        // Switch back from the chat surface to the library and reveal the inspector.
+        if selectedSection == .chat || selectedSection == .models {
+            selectedSection = .all
+        }
+        selectedDocument = doc
+        if !showDetailPanel {
+            showDetailPanel = true
+        }
+        columnVisibility = .all
     }
 
     private func rebuildVectorIndex() {
@@ -633,32 +656,52 @@ struct ContentView: View {
 
         guard panel.runModal() == .OK, let folderURL = panel.url else { return }
 
-        // Walk the folder. We rely on the same extension allow-list as the
-        // single-file picker to avoid sucking in random binaries.
+        // Walk the folder synchronously off the main actor, then come back
+        // with a Sendable [URL] snapshot. The NSEnumerator-backed walk uses
+        // makeIterator() under the hood, which Swift 6 forbids in async
+        // contexts — so we encapsulate it in a nonisolated helper that the
+        // detached task can call without ever iterating across an `await`.
         let allowedExtensions = AutoScanCoordinator.supportedExtensions
 
         Task.detached(priority: .userInitiated) {
-            var urls: [URL] = []
-            guard let enumerator = FileManager.default.enumerator(
-                at: folderURL,
-                includingPropertiesForKeys: [.isRegularFileKey],
-                options: [.skipsHiddenFiles, .skipsPackageDescendants]
-            ) else { return }
-            for case let fileURL as URL in enumerator {
-                let values = try? fileURL.resourceValues(forKeys: [.isRegularFileKey])
-                guard values?.isRegularFile == true else { continue }
-                if allowedExtensions.contains(fileURL.pathExtension.lowercased()) {
-                    urls.append(fileURL)
-                }
-            }
+            let foundURLs = Self.enumerateSupportedFiles(
+                under: folderURL,
+                extensions: allowedExtensions
+            )
             await MainActor.run {
-                if urls.isEmpty {
+                if foundURLs.isEmpty {
                     Task { await showBanner("No supported documents found in folder") }
                 } else {
-                    importFiles(urls)
+                    importFiles(foundURLs)
                 }
             }
         }
+    }
+
+    /// Synchronous recursive walk that materializes every supported file
+    /// under `folder`. Lives as a `nonisolated` static so it's safe to call
+    /// from a detached Task without the async-context restrictions on
+    /// `NSEnumerator.makeIterator()`.
+    nonisolated static func enumerateSupportedFiles(
+        under folder: URL,
+        extensions: Set<String>
+    ) -> [URL] {
+        guard let enumerator = FileManager.default.enumerator(
+            at: folder,
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsHiddenFiles, .skipsPackageDescendants]
+        ) else { return [] }
+
+        var found: [URL] = []
+        while let next = enumerator.nextObject() {
+            guard let fileURL = next as? URL else { continue }
+            let values = try? fileURL.resourceValues(forKeys: [.isRegularFileKey])
+            guard values?.isRegularFile == true else { continue }
+            if extensions.contains(fileURL.pathExtension.lowercased()) {
+                found.append(fileURL)
+            }
+        }
+        return found
     }
 }
 

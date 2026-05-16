@@ -118,7 +118,7 @@ final class MLXBundleDownloader {
                let size = try? FileManager.default.attributesOfItem(atPath: dest.path)[.size] as? NSNumber,
                size.int64Value > 1024 {            // > tiny error-page sized
                 aggregateWritten += size.int64Value
-                await updateBundleProgress(descriptor.id, written: aggregateWritten, total: expectedTotal)
+                updateBundleProgress(descriptor.id, written: aggregateWritten, total: expectedTotal)
                 continue
             }
 
@@ -131,8 +131,8 @@ final class MLXBundleDownloader {
                     expectedBundleTotal: expectedTotal
                 )
                 aggregateWritten += bytesDownloaded
-                await updateBundleProgress(descriptor.id, written: aggregateWritten, total: expectedTotal)
-            } catch let DownloaderError.notFound where Self.optionalFiles.contains(filename) {
+                updateBundleProgress(descriptor.id, written: aggregateWritten, total: expectedTotal)
+            } catch DownloaderError.notFound where Self.optionalFiles.contains(filename) {
                 // Expected — optional file, just move on without erroring.
                 continue
             } catch DownloaderError.cancelled {

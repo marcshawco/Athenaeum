@@ -11,7 +11,7 @@ struct AthenaeumApp: App {
                 .preferredColorScheme(appearance.colorScheme)
                 .tint(Japandi.Colors.accentFallback)
         }
-        .modelContainer(for: [Document.self, Tag.self])
+        .modelContainer(for: [Document.self, Tag.self, ChatConversation.self])
         .windowStyle(.titleBar)
         .windowToolbarStyle(.unified(showsTitle: false))
         .defaultSize(width: 1200, height: 800)
@@ -67,4 +67,7 @@ extension Notification.Name {
     static let scanFolderForImport = Notification.Name("scanFolderForImport")
     static let rebuildVectorIndex = Notification.Name("rebuildVectorIndex")
     static let autoScanFoldersDidChange = Notification.Name("autoScanFoldersDidChange")
+    /// Sent when a chat source is clicked. userInfo["documentID"] = UUID.
+    /// ContentView routes back to the library and selects the target.
+    static let selectDocumentByID = Notification.Name("selectDocumentByID")
 }

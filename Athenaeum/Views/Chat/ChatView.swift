@@ -4,7 +4,12 @@ import SwiftData
 struct ChatView: View {
     var llmService: LLMServiceProtocol
     var ragService: RAGService
+    @Environment(\.modelContext) private var modelContext
     @Query(sort: \Document.importedAt, order: .reverse) private var documents: [Document]
+    /// Persisted conversations, newest first. Drives the history popover.
+    @Query(sort: \ChatConversation.modifiedAt, order: .reverse)
+    private var conversations: [ChatConversation]
+
     @State private var messages: [ChatMessage] = []
     @State private var inputText: String = ""
     @State private var isGenerating = false
@@ -20,6 +25,13 @@ struct ChatView: View {
     @State private var hasAttemptedIndexRepair = false
     @State private var indexedDocumentIDs: Set<UUID> = []
     @FocusState private var isInputFocused: Bool
+
+    /// The currently-open conversation. Created lazily on the first user
+    /// turn so an empty chat surface doesn't litter the history list.
+    @State private var currentConversationID: UUID?
+    @State private var showHistoryPopover = false
+    @State private var renameTargetID: UUID?
+    @State private var renameText: String = ""
 
     var body: some View {
         VStack(spacing: 0) {
@@ -58,19 +70,41 @@ struct ChatView: View {
                     .buttonStyle(.plain)
                 }
 
+                // History popover — list of past conversations.
                 Button {
-                    stopGeneration(keepingPartialResponse: false)
-                    messages.removeAll()
-                    streamedResponse = ""
-                    currentSources = []
-                    showSources = false
+                    showHistoryPopover = true
                 } label: {
-                    Image(systemName: "arrow.counterclockwise")
-                        .font(.system(size: 11, weight: .light))
-                        .foregroundStyle(Japandi.Colors.textTertiaryFB)
+                    HStack(spacing: 4) {
+                        Image(systemName: "clock.arrow.circlepath")
+                            .font(.system(size: 10, weight: .light))
+                        Text("History")
+                            .font(Japandi.Typography.caption)
+                    }
+                    .foregroundStyle(Japandi.Colors.textSecondaryFB)
+                    .padding(.horizontal, Japandi.Spacing.xs)
+                    .padding(.vertical, Japandi.Spacing.xxs + 1)
+                    .background(Japandi.Colors.surfaceRaisedFB)
+                    .clipShape(Capsule())
+                    .overlay(Capsule().strokeBorder(Japandi.Colors.borderFallback, lineWidth: 0.5))
                 }
                 .buttonStyle(.plain)
-                .disabled(messages.isEmpty)
+                .help("Open chat history")
+                .accessibilityLabel("Chat history")
+                .popover(isPresented: $showHistoryPopover, arrowEdge: .top) {
+                    chatHistoryPopover
+                }
+
+                // New chat — saves current and starts fresh.
+                Button {
+                    startNewConversation()
+                } label: {
+                    Image(systemName: "square.and.pencil")
+                        .font(.system(size: 12, weight: .light))
+                        .foregroundStyle(Japandi.Colors.textSecondaryFB)
+                }
+                .buttonStyle(.plain)
+                .help("New chat")
+                .accessibilityLabel("New chat")
             }
             .padding(.horizontal, Japandi.Spacing.lg)
             .padding(.vertical, Japandi.Spacing.md)
@@ -113,7 +147,10 @@ struct ChatView: View {
 
                     ForEach(messages) { message in
                         VStack(alignment: .leading, spacing: Japandi.Spacing.xxs) {
-                            ChatBubble(message: message)
+                            ChatBubble(
+                                message: message,
+                                sources: sourcesByMessage[message.id] ?? []
+                            )
                             if let perMessageSources = sourcesByMessage[message.id], !perMessageSources.isEmpty {
                                 inlineSourcesDisclosure(messageID: message.id, sources: perMessageSources)
                             }
@@ -189,8 +226,8 @@ struct ChatView: View {
 
             if isOpen {
                 VStack(alignment: .leading, spacing: 6) {
-                    ForEach(sources) { source in
-                        SourceCard(source: source)
+                    ForEach(Array(sources.enumerated()), id: \.element.id) { idx, source in
+                        SourceCard(source: source, index: idx + 1)
                     }
                 }
                 .padding(.leading, 14)
@@ -228,8 +265,8 @@ struct ChatView: View {
 
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: Japandi.Spacing.sm) {
-                    ForEach(currentSources) { source in
-                        SourceCard(source: source)
+                    ForEach(Array(currentSources.enumerated()), id: \.element.id) { idx, source in
+                        SourceCard(source: source, index: idx + 1)
                     }
                 }
                 .padding(Japandi.Spacing.sm)
@@ -338,6 +375,10 @@ struct ChatView: View {
         inputText = ""
         isGenerating = true
         streamedResponse = ""
+        // Materialize the conversation on first send and persist the user
+        // turn immediately so a crash mid-generation doesn't lose the input.
+        ensureCurrentConversation()
+        saveCurrentConversation()
 
         generationTask = Task {
             defer {
@@ -384,16 +425,19 @@ struct ChatView: View {
                     sourcesByMessage[response.id] = sources
                 }
                 streamedResponse = ""
+                saveCurrentConversation()
             } catch is CancellationError {
                 let partial = streamedResponse.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !partial.isEmpty {
                     messages.append(ChatMessage(role: .assistant, content: partial))
                     streamedResponse = ""
                 }
+                saveCurrentConversation()
             } catch {
                 let errorMsg = ChatMessage(role: .assistant, content: "⚠️ \(error.localizedDescription)")
                 messages.append(errorMsg)
                 streamedResponse = ""
+                saveCurrentConversation()
             }
         }
     }
@@ -412,6 +456,232 @@ struct ChatView: View {
         streamedResponse = ""
         isGenerating = false
         isInputFocused = true
+    }
+
+    // MARK: - Chat history popover
+
+    private var chatHistoryPopover: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("Chats")
+                    .font(.system(size: 13, weight: .medium, design: .serif))
+                    .foregroundStyle(Japandi.Colors.textPrimaryFB)
+                Spacer()
+                Text("\(conversations.count)")
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(Japandi.Colors.textTertiaryFB)
+            }
+            .padding(.horizontal, Japandi.Spacing.sm)
+            .padding(.vertical, 8)
+
+            Divider().foregroundStyle(Japandi.Colors.borderFallback)
+
+            if conversations.isEmpty {
+                VStack(spacing: Japandi.Spacing.xs) {
+                    Image(systemName: "tray")
+                        .font(.system(size: 22, weight: .ultraLight))
+                        .foregroundStyle(Japandi.Colors.borderFallback)
+                    Text("No saved chats yet")
+                        .font(Japandi.Typography.caption)
+                        .foregroundStyle(Japandi.Colors.textTertiaryFB)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, Japandi.Spacing.lg)
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        ForEach(conversations) { conv in
+                            historyRow(conv)
+                            Divider().foregroundStyle(Japandi.Colors.borderFallback.opacity(0.4))
+                        }
+                    }
+                }
+                .frame(maxHeight: 360)
+            }
+
+            Divider().foregroundStyle(Japandi.Colors.borderFallback)
+
+            Button {
+                showHistoryPopover = false
+                startNewConversation()
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "square.and.pencil")
+                        .font(.system(size: 11))
+                    Text("New chat")
+                        .font(Japandi.Typography.body)
+                }
+                .foregroundStyle(Japandi.Colors.accentFallback)
+                .padding(.horizontal, Japandi.Spacing.sm)
+                .padding(.vertical, 8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+        .frame(width: 320)
+        .background(Japandi.Colors.surfaceRaisedFB)
+    }
+
+    private func historyRow(_ conv: ChatConversation) -> some View {
+        let isCurrent = currentConversationID == conv.id
+        let isRenaming = renameTargetID == conv.id
+        return HStack(alignment: .top, spacing: Japandi.Spacing.xs) {
+            // Active dot
+            Circle()
+                .fill(isCurrent ? Japandi.Colors.accentFallback : Color.clear)
+                .frame(width: 5, height: 5)
+                .padding(.top, 7)
+
+            VStack(alignment: .leading, spacing: 2) {
+                if isRenaming {
+                    TextField("Title", text: $renameText)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 12.5, weight: .medium))
+                        .foregroundStyle(Japandi.Colors.textPrimaryFB)
+                        .onSubmit { commitRename(conv) }
+                } else {
+                    Text(conv.title)
+                        .font(.system(size: 12.5, weight: isCurrent ? .semibold : .medium))
+                        .foregroundStyle(Japandi.Colors.textPrimaryFB)
+                        .lineLimit(1)
+                }
+                Text(conv.preview)
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(Japandi.Colors.textTertiaryFB)
+                    .lineLimit(1)
+                Text(conv.modifiedAt.formatted(.relative(presentation: .named)))
+                    .font(.system(size: 9.5, design: .monospaced))
+                    .foregroundStyle(Japandi.Colors.textTertiaryFB)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, Japandi.Spacing.sm)
+        .padding(.vertical, 8)
+        .background(isCurrent
+                    ? Japandi.Colors.washFallback.opacity(0.6)
+                    : Color.clear)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            guard !isRenaming else { return }
+            load(conv)
+            showHistoryPopover = false
+        }
+        .contextMenu {
+            Button {
+                renameTargetID = conv.id
+                renameText = conv.title
+            } label: { Label("Rename", systemImage: "pencil") }
+
+            Button {
+                duplicate(conv)
+            } label: { Label("Duplicate", systemImage: "doc.on.doc") }
+
+            Divider()
+
+            Button(role: .destructive) {
+                delete(conv)
+            } label: { Label("Delete", systemImage: "trash") }
+        }
+    }
+
+    // MARK: - Persistence
+
+    /// Find or create the conversation matching `currentConversationID`.
+    /// Called lazily so that landing on the chat surface doesn't create a
+    /// row in the history list until the user actually sends a message.
+    @discardableResult
+    private func ensureCurrentConversation() -> ChatConversation {
+        if let id = currentConversationID,
+           let existing = conversations.first(where: { $0.id == id }) {
+            return existing
+        }
+        let conv = ChatConversation(title: "New chat")
+        modelContext.insert(conv)
+        try? modelContext.save()
+        currentConversationID = conv.id
+        return conv
+    }
+
+    /// Snapshot the in-memory message list onto the active conversation. We
+    /// rewrite the whole JSON blob each time — cheap, and avoids per-message
+    /// SwiftData inserts. Also derives a title from the first user message
+    /// when the conversation is still called "New chat".
+    private func saveCurrentConversation() {
+        guard let id = currentConversationID,
+              let conv = conversations.first(where: { $0.id == id }) else { return }
+        let stored = messages.map { msg in
+            StoredMessage(
+                from: msg,
+                sources: sourcesByMessage[msg.id] ?? []
+            )
+        }
+        conv.setStoredMessages(stored)
+        if conv.title == "New chat",
+           let firstUser = messages.first(where: { $0.role == .user })?.content {
+            conv.title = String(firstUser.prefix(60))
+        }
+        try? modelContext.save()
+    }
+
+    /// Reset transient state and load a persisted conversation's messages
+    /// into the live view. Stops any in-flight generation first.
+    private func load(_ conv: ChatConversation) {
+        stopGeneration(keepingPartialResponse: false)
+        let stored = conv.storedMessages()
+        messages = stored.map(\.chatMessage)
+        sourcesByMessage = Dictionary(
+            uniqueKeysWithValues: stored.compactMap { s -> (UUID, [RAGSource])? in
+                guard !s.sources.isEmpty else { return nil }
+                return (s.id, s.ragSources)
+            }
+        )
+        // Restore the most-recent assistant turn's sources so the side panel
+        // and the "N sources" pill in the header reflect the loaded chat.
+        if let lastAssistant = messages.last(where: { $0.role == .assistant }) {
+            currentSources = sourcesByMessage[lastAssistant.id] ?? []
+        } else {
+            currentSources = []
+        }
+        streamedResponse = ""
+        currentConversationID = conv.id
+    }
+
+    /// Persist the current chat (if it has any messages) and start a fresh,
+    /// empty conversation. The new row is created lazily on the next send.
+    private func startNewConversation() {
+        if !messages.isEmpty { saveCurrentConversation() }
+        stopGeneration(keepingPartialResponse: false)
+        messages.removeAll()
+        sourcesByMessage.removeAll()
+        expandedSourcesByMessage.removeAll()
+        currentSources = []
+        showSources = false
+        streamedResponse = ""
+        currentConversationID = nil
+    }
+
+    private func delete(_ conv: ChatConversation) {
+        let wasCurrent = (currentConversationID == conv.id)
+        modelContext.delete(conv)
+        try? modelContext.save()
+        if wasCurrent { startNewConversation() }
+    }
+
+    private func duplicate(_ conv: ChatConversation) {
+        let copy = ChatConversation(title: conv.title + " copy")
+        copy.messagesJSON = conv.messagesJSON
+        copy.modifiedAt = .now
+        modelContext.insert(copy)
+        try? modelContext.save()
+    }
+
+    private func commitRename(_ conv: ChatConversation) {
+        let trimmed = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty { conv.title = trimmed }
+        try? modelContext.save()
+        renameTargetID = nil
     }
 
     private var documentContexts: [RAGDocumentContext] {
@@ -444,18 +714,45 @@ struct ChatView: View {
 
 struct ChatBubble: View {
     let message: ChatMessage
+    var sources: [RAGSource] = []
 
     private var isUser: Bool { message.role == .user }
+
+    /// Strip the noisy "Reference(s): [Source 1] …" trailing block some
+    /// models still emit even with the updated prompt. Anything from the
+    /// first standalone "Reference" / "References" line to end-of-message
+    /// is dropped before rendering.
+    private var cleanedContent: String {
+        guard !isUser else { return message.content }
+        var text = message.content
+        let patterns = [
+            "\n\nReferences?:",
+            "\nReferences?:",
+            "\n\nReference\\(s\\):",
+            "\nReference\\(s\\):",
+        ]
+        for pattern in patterns {
+            if let range = text.range(of: pattern, options: [.regularExpression, .caseInsensitive]) {
+                text = String(text[..<range.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+                break
+            }
+        }
+        return text
+    }
 
     var body: some View {
         HStack {
             if isUser { Spacer(minLength: Japandi.Spacing.xxl) }
 
             VStack(alignment: isUser ? .trailing : .leading, spacing: Japandi.Spacing.xxxs) {
-                Text(message.content)
-                    .font(Japandi.Typography.body)
-                    .foregroundStyle(isUser ? .white : Japandi.Colors.textPrimaryFB)
-                    .textSelection(.enabled)
+                if !isUser && !sources.isEmpty {
+                    CitationText(text: cleanedContent, sources: sources)
+                } else {
+                    Text(cleanedContent)
+                        .font(Japandi.Typography.body)
+                        .foregroundStyle(isUser ? .white : Japandi.Colors.textPrimaryFB)
+                        .textSelection(.enabled)
+                }
 
                 Text(message.timestamp.formatted(date: .omitted, time: .shortened))
                     .font(.system(size: 9))
@@ -491,46 +788,96 @@ struct ChatBubble: View {
 
 // MARK: - Source Card
 
+// NotebookLM-style source card. Numbered chip on the left, document title +
+// page in serif, snippet underneath, hover state with accent rim. Click opens
+// the document in the library via the `.selectDocumentByID` notification.
 struct SourceCard: View {
     let source: RAGSource
+    var index: Int? = nil
+
+    @State private var isHovered = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Japandi.Spacing.xxs) {
-            HStack {
-                Image(systemName: "doc.text")
-                    .font(.system(size: 9, weight: .light))
-                    .foregroundStyle(Japandi.Colors.accentMutedFallback)
+        Button {
+            NotificationCenter.default.post(
+                name: .selectDocumentByID,
+                object: nil,
+                userInfo: ["documentID": source.documentID]
+            )
+        } label: {
+            HStack(alignment: .top, spacing: Japandi.Spacing.sm) {
+                // Numbered chip — anchor for "[Source 3]" style citations.
+                Text(index.map { "\($0)" } ?? "·")
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .foregroundStyle(isHovered
+                                     ? Japandi.Colors.accentFallback
+                                     : Japandi.Colors.accentMutedFallback)
+                    .frame(width: 22, height: 22)
+                    .background(
+                        Circle()
+                            .fill(isHovered
+                                  ? Japandi.Colors.washFallback
+                                  : Japandi.Colors.surfaceFallback)
+                            .overlay(
+                                Circle().strokeBorder(
+                                    isHovered
+                                        ? Japandi.Colors.accentFallback.opacity(0.45)
+                                        : Japandi.Colors.borderFallback,
+                                    lineWidth: 0.5
+                                )
+                            )
+                    )
 
-                if let page = source.pageNumber {
-                    Text("Page \(page)")
+                VStack(alignment: .leading, spacing: 2) {
+                    // Title row — primary affordance, scales with serif weight.
+                    HStack(spacing: 4) {
+                        Text(source.documentTitle ?? "Untitled document")
+                            .font(.system(size: 12.5, weight: .medium, design: .serif))
+                            .foregroundStyle(Japandi.Colors.textPrimaryFB)
+                            .lineLimit(1)
+                        if let page = source.pageNumber {
+                            Text("· p.\(page)")
+                                .font(.system(size: 10, design: .monospaced))
+                                .foregroundStyle(Japandi.Colors.textTertiaryFB)
+                        }
+                        Spacer(minLength: 4)
+                        Text("\(source.relevancePercent)%")
+                            .font(.system(size: 9.5, weight: .medium, design: .monospaced))
+                            .foregroundStyle(Japandi.Colors.accentFallback)
+                        Image(systemName: "arrow.up.right")
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundStyle(isHovered
+                                             ? Japandi.Colors.accentFallback
+                                             : Japandi.Colors.textTertiaryFB)
+                    }
+                    Text(source.chunkText)
                         .font(Japandi.Typography.caption)
                         .foregroundStyle(Japandi.Colors.textSecondaryFB)
-                } else if let title = source.documentTitle {
-                    Text(title)
-                        .font(Japandi.Typography.caption)
-                        .foregroundStyle(Japandi.Colors.textSecondaryFB)
-                        .lineLimit(1)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
                 }
-
-                Spacer()
-
-                Text("\(source.relevancePercent)%")
-                    .font(Japandi.Typography.eyebrow)
-                    .foregroundStyle(Japandi.Colors.accentFallback)
             }
-
-            Text(source.chunkText)
-                .font(Japandi.Typography.caption)
-                .foregroundStyle(Japandi.Colors.textSecondaryFB)
-                .lineLimit(4)
+            .padding(.horizontal, Japandi.Spacing.sm)
+            .padding(.vertical, 8)
+            .background(isHovered
+                        ? Japandi.Colors.washFallback.opacity(0.6)
+                        : Japandi.Colors.surfaceRaisedFB)
+            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .strokeBorder(
+                        isHovered
+                            ? Japandi.Colors.accentFallback.opacity(0.45)
+                            : Japandi.Colors.borderFallback.opacity(0.85),
+                        lineWidth: isHovered ? 0.75 : 0.5
+                    )
+            )
+            .contentShape(Rectangle())
         }
-        .padding(Japandi.Spacing.xs)
-        .background(Japandi.Colors.surfaceRaisedFB)
-        .clipShape(RoundedRectangle(cornerRadius: Japandi.Radius.sm, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: Japandi.Radius.sm, style: .continuous)
-                .strokeBorder(Japandi.Colors.borderFallback.opacity(0.85), lineWidth: 0.5)
-        )
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+        .help("Open \(source.documentTitle ?? "document") in the library")
+        .accessibilityLabel("Open source \(index.map { "\($0)" } ?? "") · \(source.documentTitle ?? "")")
     }
 }
 
