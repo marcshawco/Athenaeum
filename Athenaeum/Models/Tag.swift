@@ -66,8 +66,8 @@ extension Tag {
         "travel", "itinerary", "boarding-pass", "flight", "hotel", "reservation", "rental-car", "passport-copy",
         "visa-copy", "event", "conference", "workshop", "mileage", "per-diem", "home", "household",
         "moving", "storage", "renovation", "contractor-bid", "blueprint", "floor-plan", "hoa", "mortgage-statement",
-        "escrow", "utilities-bill", "family", "childcare", "daycare", "eldercare", "consent-form", "document",
-        "pdf", "scan", "image", "urgent", "to-review", "follow-up", "paid", "unpaid",
+        "escrow", "utilities-bill", "family", "childcare", "daycare", "eldercare", "consent-form",
+        "urgent", "to-review", "follow-up", "paid", "unpaid",
         "overdue", "pending", "approved", "confidential"
     ]
 }

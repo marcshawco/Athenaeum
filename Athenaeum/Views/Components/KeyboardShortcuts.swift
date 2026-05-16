@@ -69,7 +69,7 @@ struct BatchActionToolbar: View {
                     }
 
                     Button(action: onReprocess) {
-                        Label("Reprocess", systemImage: "arrow.clockwise")
+                        Label("Auto Tag", systemImage: "wand.and.stars")
                     }
 
                     Button(action: onAIRename) {

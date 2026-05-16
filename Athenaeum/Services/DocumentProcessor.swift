@@ -530,12 +530,16 @@ final class DocumentProcessor {
         var repaired = classification
         var tags = Set(repaired.tags.map(normalizeTagName).filter { !$0.isEmpty })
 
-        if tags.count < 2 {
+        // Only fall back to the offline keyword classifier if the LLM gave us
+        // nothing at all. Merging offline tags into a partial LLM result was
+        // contaminating accurate classifications with stray keyword matches —
+        // e.g. a resume mentioning "tax-advantaged 401k" picked up a `tax`
+        // tag, a brand strategy doc mentioning "lease" picked up `lease`.
+        if tags.isEmpty {
             tags.formUnion(fallback.tags.map(normalizeTagName).filter { !$0.isEmpty })
         }
 
         if tags.isEmpty {
-            tags.insert("document")
             tags.insert("to-review")
         } else if tags.count == 1 {
             tags.insert("to-review")

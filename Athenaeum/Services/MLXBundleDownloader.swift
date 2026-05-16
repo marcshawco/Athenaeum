@@ -3,9 +3,9 @@ import Foundation
 // MARK: - MLX Bundle Downloader
 //
 // Downloads the multi-file Hugging Face snapshot for a single MLXBundleDescriptor
-// into its on-disk directory. Files are fetched serially, each one streamed
-// chunk-by-chunk so the progress bar moves smoothly even on a 4 GB safetensors
-// file.
+// into its on-disk directory. Files are fetched serially with a native
+// URLSessionDownloadTask per file so the kernel handles chunked I/O and we get
+// smooth progress updates even on a 4 GB safetensors blob.
 //
 // We deliberately keep this independent of `ModelDownloader` (which is keyed
 // by LLMRole + assumes one file per model). MLX bundles aren't role-keyed and
@@ -17,6 +17,8 @@ final class MLXBundleDownloader {
     private(set) var states: [String: BundleDownloadState] = [:]
 
     private var cancelledBundleIDs: Set<String> = []
+
+    private var runningTasks: [String: Task<Void, Never>] = [:]
 
     private let manager: MLXModelManager
 
@@ -69,14 +71,18 @@ final class MLXBundleDownloader {
             failureMessage: nil
         )
 
-        Task.detached(priority: .utility) { [weak self] in
-            await self?.runDownload(descriptor)
+        let task = Task.detached(priority: .utility) { [weak self] in
+            guard let self else { return }
+            await self.runDownload(descriptor)
         }
+        runningTasks[descriptor.id] = task
     }
 
     func cancelDownload(_ descriptor: MLXBundleDescriptor) {
         cancelledBundleIDs.insert(descriptor.id)
         states[descriptor.id]?.status = .cancelled
+        runningTasks[descriptor.id]?.cancel()
+        runningTasks.removeValue(forKey: descriptor.id)
     }
 
     func clearFinishedState(_ descriptor: MLXBundleDescriptor) {
@@ -156,9 +162,10 @@ final class MLXBundleDownloader {
         }
     }
 
-    /// Stream a single file using `URLSession.bytes(for:)`. Writes to a
-    /// `.partial` file as bytes arrive and atomically renames on completion.
-    /// Returns the total bytes written for this file.
+    /// Download a single file with a native `URLSessionDownloadTask`. The task
+    /// handles chunked I/O at the kernel level (writing straight to a temp file)
+    /// and emits progress through a delegate — orders of magnitude faster than
+    /// iterating `URLSession.bytes(for:)` byte-by-byte for multi-GB files.
     private func downloadFileStreaming(
         bundleID: String,
         url: URL,
@@ -166,85 +173,75 @@ final class MLXBundleDownloader {
         aggregateAlreadyWritten: Int64,
         expectedBundleTotal: Int64
     ) async throws -> Int64 {
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
+        let request = URLRequest(url: url)
 
-        let (stream, response): (URLSession.AsyncBytes, URLResponse)
+        let delegate = ProgressDelegate { [weak self] written, total in
+            guard let self else { return }
+            let aggregate = aggregateAlreadyWritten + written
+            let denom = max(expectedBundleTotal, aggregate)
+            let progress = denom > 0 ? min(1.0, Double(aggregate) / Double(denom)) : 0
+            Task { @MainActor in
+                guard var s = self.states[bundleID] else { return }
+                s.currentFileBytes = written
+                s.currentFileTotal = max(total, 0)
+                s.bytesWritten = aggregate
+                s.progress = progress
+                self.states[bundleID] = s
+            }
+        }
+
+        let tempURL: URL
+        let response: URLResponse
         do {
-            (stream, response) = try await session.bytes(for: request)
-        } catch {
-            throw error
+            (tempURL, response) = try await session.download(for: request, delegate: delegate)
+        } catch let urlError as URLError where urlError.code == .cancelled {
+            throw DownloaderError.cancelled
+        } catch is CancellationError {
+            throw DownloaderError.cancelled
         }
 
         if let http = response as? HTTPURLResponse {
             switch http.statusCode {
             case 200...299: break
-            case 404:       throw DownloaderError.notFound
-            default:        throw DownloaderError.httpError(http.statusCode)
+            case 404:
+                try? FileManager.default.removeItem(at: tempURL)
+                throw DownloaderError.notFound
+            default:
+                try? FileManager.default.removeItem(at: tempURL)
+                throw DownloaderError.httpError(http.statusCode)
             }
         }
-
-        let totalForFile = response.expectedContentLength
-        await MainActor.run {
-            states[bundleID]?.currentFileTotal = max(totalForFile, 0)
-        }
-
-        // Stream into a .partial sibling and rename at the end.
-        let partial = destination.appendingPathExtension("partial")
-        if FileManager.default.fileExists(atPath: partial.path) {
-            try? FileManager.default.removeItem(at: partial)
-        }
-        FileManager.default.createFile(atPath: partial.path, contents: nil)
-        let handle = try FileHandle(forWritingTo: partial)
-        defer { try? handle.close() }
-
-        var buffer = Data()
-        var fileBytes: Int64 = 0
-        let flushThreshold = 256 * 1024   // 256 KB per flush — cheap I/O
-        let uiUpdateThreshold: Int64 = 512 * 1024
-
-        var bytesSinceUIUpdate: Int64 = 0
-
-        for try await byte in stream {
-            if cancelledBundleIDs.contains(bundleID) {
-                try? FileManager.default.removeItem(at: partial)
-                throw DownloaderError.cancelled
-            }
-            buffer.append(byte)
-            fileBytes += 1
-            bytesSinceUIUpdate += 1
-
-            if buffer.count >= flushThreshold {
-                try handle.write(contentsOf: buffer)
-                buffer.removeAll(keepingCapacity: true)
-            }
-
-            if bytesSinceUIUpdate >= uiUpdateThreshold {
-                let snapshotFileBytes = fileBytes
-                let snapshotAggregate = aggregateAlreadyWritten + fileBytes
-                await MainActor.run {
-                    states[bundleID]?.currentFileBytes = snapshotFileBytes
-                    states[bundleID]?.bytesWritten = snapshotAggregate
-                    let total = max(expectedBundleTotal, snapshotAggregate)
-                    states[bundleID]?.progress = total > 0
-                        ? min(1.0, Double(snapshotAggregate) / Double(total))
-                        : 0
-                }
-                bytesSinceUIUpdate = 0
-            }
-        }
-
-        if !buffer.isEmpty {
-            try handle.write(contentsOf: buffer)
-            buffer.removeAll(keepingCapacity: true)
-        }
-        try handle.close()
 
         if FileManager.default.fileExists(atPath: destination.path) {
             try? FileManager.default.removeItem(at: destination)
         }
-        try FileManager.default.moveItem(at: partial, to: destination)
-        return fileBytes
+        try FileManager.default.moveItem(at: tempURL, to: destination)
+
+        let size = (try? FileManager.default.attributesOfItem(atPath: destination.path)[.size] as? NSNumber)?.int64Value ?? 0
+        return size
+    }
+
+    private final class ProgressDelegate: NSObject, URLSessionDownloadDelegate {
+        private let onProgress: (Int64, Int64) -> Void
+
+        init(onProgress: @escaping (Int64, Int64) -> Void) {
+            self.onProgress = onProgress
+        }
+
+        func urlSession(_ session: URLSession,
+                        downloadTask: URLSessionDownloadTask,
+                        didWriteData bytesWritten: Int64,
+                        totalBytesWritten: Int64,
+                        totalBytesExpectedToWrite: Int64) {
+            onProgress(totalBytesWritten, totalBytesExpectedToWrite)
+        }
+
+        func urlSession(_ session: URLSession,
+                        downloadTask: URLSessionDownloadTask,
+                        didFinishDownloadingTo location: URL) {
+            // Required by protocol; `session.download(for:delegate:)` returns
+            // this location as its tempURL, so nothing to do here.
+        }
     }
 
     @MainActor

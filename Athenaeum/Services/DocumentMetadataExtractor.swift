@@ -221,8 +221,6 @@ enum OfflineDocumentClassifier {
         let lower = "\(filename) \(metadata.subject ?? "") \(text.prefix(5000))".lowercased()
         var tags = Set<String>()
 
-        tags.insert(fileTag(for: filename))
-
         let keywordTags: [(String, [String])] = [
             ("invoice", ["invoice", "amount due", "bill to", "payment terms"]),
             ("receipt", ["receipt", "subtotal", "total paid", "merchant"]),
@@ -274,17 +272,6 @@ enum OfflineDocumentClassifier {
             date: date,
             summary: summary
         )
-    }
-
-    private static func fileTag(for filename: String) -> String {
-        switch (filename as NSString).pathExtension.lowercased() {
-        case "pdf": return "pdf"
-        case "doc", "docx", "rtf", "rtfd", "pages": return "document"
-        case "txt", "md", "csv", "json", "xml": return "text"
-        case "png", "jpg", "jpeg", "tiff", "heic": return "image"
-        case "mp3", "m4a", "wav", "mov", "mp4", "m4v": return "media"
-        default: return "archive"
-        }
     }
 
     private static func firstSummarySentence(from text: String, fallback: String?) -> String? {

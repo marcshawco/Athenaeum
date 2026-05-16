@@ -120,8 +120,12 @@ struct ChatView: View {
                     showClearConfirm = true
                 } label: {
                     Image(systemName: "trash")
-                        .font(.system(size: 11, weight: .light))
+                        .font(.system(size: 11, weight: .regular))
                         .foregroundStyle(Japandi.Colors.warmFallback)
+                        .frame(width: 22, height: 22)
+                        .background(Japandi.Colors.warmFallback.opacity(0.08))
+                        .clipShape(Circle())
+                        .overlay(Circle().strokeBorder(Japandi.Colors.warmFallback.opacity(0.25), lineWidth: 0.5))
                 }
                 .buttonStyle(.plain)
                 .help("Clear this chat")
