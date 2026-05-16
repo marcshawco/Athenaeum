@@ -56,8 +56,10 @@ struct ModelStatusView: View {
                 .padding(Japandi.Spacing.md)
                 .premiumPane()
 
-                // Model cards
-                ForEach(LLMModelDescriptor.defaults, id: \.role) { descriptor in
+                // Model cards — one tile per unique file on disk. Tagger
+                // and chat share a single Qwen 14B file, so they render as
+                // a single tile here even though both roles exist.
+                ForEach(LLMModelDescriptor.uniqueByFilename, id: \.filename) { descriptor in
                     let isAvailable = modelManager.availableModels[descriptor.role] != nil
                     let isLoaded = modelManager.loadedModels.contains(descriptor.role)
                     let downloadState = modelDownloader.downloads[descriptor.role]
@@ -642,28 +644,32 @@ struct ModelCard: View {
 
     private var iconName: String {
         switch descriptor.role {
-        case .tagger:   "tag"
-        case .chat:     "bubble.left.and.text.bubble.right"
-        case .chatPlus: "sparkles"
-        case .vision:   "eye"
+        case .tagger:    "tag"
+        case .chat:      "bubble.left.and.text.bubble.right"
+        case .embedding: "point.3.connected.trianglepath.dotted"
+        case .vision:    "eye"
         }
     }
 
     private var iconColor: Color {
         switch descriptor.role {
-        case .tagger:   Japandi.Colors.accentFallback
-        case .chat:     Japandi.Colors.accentMutedFallback
-        case .chatPlus: Japandi.Colors.warmFallback
-        case .vision:   Japandi.Colors.mineralFallback
+        case .tagger:    Japandi.Colors.accentFallback
+        case .chat:      Japandi.Colors.accentMutedFallback
+        case .embedding: Japandi.Colors.warmFallback
+        case .vision:    Japandi.Colors.mineralFallback
         }
     }
 
     private var roleDescription: String {
+        let sharedRoles = Set(LLMModelDescriptor.roles(forFilename: descriptor.filename))
+        if sharedRoles.contains(.tagger) && sharedRoles.contains(.chat) {
+            return "Document tagging + RAG document Q&A (shared model)"
+        }
         switch descriptor.role {
-        case .tagger:   "Document classification & JSON tag extraction"
-        case .chat:     "RAG-powered document Q&A"
-        case .chatPlus: "Optional — sharper chat. Replaces Mistral for chat once installed."
-        case .vision:   "Smart OCR for images & scanned documents"
+        case .tagger:    return "Document classification & JSON tag extraction"
+        case .chat:      return "RAG-powered document Q&A"
+        case .embedding: return "Retrieval embeddings powering RAG search & chat citations"
+        case .vision:    return "Smart OCR for images & scanned documents"
         }
     }
 }

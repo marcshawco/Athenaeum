@@ -127,7 +127,7 @@ struct DocumentContextMenu: ViewModifier {
                 Button {
                     reprocessDocument()
                 } label: {
-                    Label("Reprocess", systemImage: "arrow.clockwise")
+                    Label("Auto Tag", systemImage: "wand.and.stars")
                 }
 
                 Button {

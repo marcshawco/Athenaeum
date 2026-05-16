@@ -43,9 +43,9 @@ Athenaeum starts in `AthenaeumApp`, which creates the SwiftData model container 
 - `DocumentVaultMonitor` watches the vault for Finder-added documents.
 - `DocumentProcessor` orchestrates import, text extraction, metadata refinement, classification, persistence, and RAG indexing.
 - `VisionOCRService` handles native OCR for images and scanned documents.
-- `LocalLLMService` uses `LlamaContext` actors to load and run local models.
-- `VectorStore` persists embeddings for local semantic search.
-- `RAGService` chunks documents, retrieves relevant context, and streams chat answers with citations.
+- `LocalLLMService` uses `LlamaContext` actors to load and run local models. Two roles that point at the same file share a single in-RAM context.
+- `VectorStore` persists embeddings for local semantic search. It detects embedding-dimension mismatches on load so the library can be re-embedded when the embedder changes.
+- `RAGService` chunks documents, generates retrieval-tuned embeddings with the dedicated embedding model, retrieves relevant context, and streams chat answers with citations.
 - `ModelDownloader` downloads the configured GGUF models into Application Support.
 
 The UI is organized around a three-pane macOS layout: sidebar navigation, a library or chat content area, and an inspector-style detail/preview pane.
@@ -58,15 +58,17 @@ Athenaeum looks for GGUF models in:
 ~/Library/Application Support/Athenaeum/Models
 ```
 
-The current model roles are:
+The catalog is "best in class for the job" — no optional tiers, no second-string fallbacks. Three files cover four jobs:
 
-| Role | Default model | Purpose |
+| File | Roles | Purpose |
 | --- | --- | --- |
-| Tagger | `Qwen2.5-7B-Instruct-Q4_K_M.gguf` | Metadata and tag classification |
-| Chat | `Mistral-7B-Instruct-v0.3-Q4_K_M.gguf` | Document chat and embeddings |
-| Vision | `ggml-model-Q4_K_M.gguf` | Enhanced OCR path when available |
+| `Qwen2.5-14B-Instruct-Q4_K_M.gguf` (~9 GB) | Tagger + Chat | Strict-JSON document classification (300-term controlled vocabulary, 500-type taxonomy) and RAG document chat. One file, two roles, one in-RAM context — `LocalLLMService.contextForRole` dedupes by filename. |
+| `nomic-embed-text-v1.5.Q4_K_M.gguf` (~280 MB) | Embedding | Purpose-built retrieval embeddings (768-dim, contrastively trained). RAGService injects the model's required `search_document:` / `search_query:` task prefixes. |
+| `ggml-model-Q4_K_M.gguf` (~5 GB) | Vision | MiniCPM-V 2.6 — enhanced OCR for scanned PDFs and photographed receipts when Apple Vision alone isn't enough. |
 
-Models can be downloaded from the app's Model Status screen. Document import still works without models installed; Athenaeum falls back to local extraction and rule-based classification where possible.
+Models can be downloaded from the app's Model Status screen. Document import still works without models installed; Athenaeum falls back to native text extraction, Apple Vision OCR, and a rule-based offline classifier where possible.
+
+When the active embedder's output dimension stops matching what's persisted in the vector store, the store wipes itself on next launch and `indexExistingDocumentsIfNeeded` re-embeds the library in the background. This is the upgrade path used when the embedding model changes.
 
 ## Requirements
 

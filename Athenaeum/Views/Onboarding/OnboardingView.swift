@@ -129,16 +129,16 @@ struct OnboardingView: View {
 
             VStack(spacing: Japandi.Spacing.sm) {
                 ModelInfoRow(
-                    name: "Qwen 2.5",
-                    role: "Classification & Tagging",
-                    size: "~4.7 GB",
+                    name: "Qwen 2.5 14B",
+                    role: "Tagging + Chat",
+                    size: "~9.0 GB",
                     color: Japandi.Colors.accentFallback
                 )
                 ModelInfoRow(
-                    name: "Mistral v0.3",
-                    role: "Document Chat (RAG)",
-                    size: "~4.4 GB",
-                    color: Japandi.Colors.accentMutedFallback
+                    name: "Nomic Embed v1.5",
+                    role: "Retrieval Embeddings",
+                    size: "~0.3 GB",
+                    color: Japandi.Colors.warmFallback
                 )
                 ModelInfoRow(
                     name: "MiniCPM-V",

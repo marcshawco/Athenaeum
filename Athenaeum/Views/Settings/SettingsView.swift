@@ -231,7 +231,7 @@ struct SettingsView: View {
                         Text("Auto-tag new documents with AI")
                             .font(Japandi.Typography.body)
                             .foregroundStyle(Japandi.Colors.textPrimaryFB)
-                        Text("Uses the local tagger model to read each new document and assign tags + a 500-type document classification. Turn off to import without AI tagging — you can always run \u{201C}Reprocess\u{201D} later.")
+                        Text("Uses the local tagger model to read each new document and assign tags + a 500-type document classification. Turn off to import without AI tagging — you can always run \u{201C}Auto Tag\u{201D} later.")
                             .font(Japandi.Typography.caption)
                             .foregroundStyle(Japandi.Colors.textTertiaryFB)
                             .fixedSize(horizontal: false, vertical: true)

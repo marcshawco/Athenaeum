@@ -89,7 +89,7 @@ struct HelpView: View {
             tourCard(
                 step: "04",
                 title: "Pick the right models",
-                blurb: "On first launch, head to Model Status (sidebar bottom) and click Download on each of the three pills. Qwen handles tagging, Mistral runs chat, MiniCPM-V does smart OCR on scanned pages. About 14 GB total. Everything runs on your Mac — Settings ▸ AI Models ▸ Analyze My Mac picks the right defaults for your hardware.",
+                blurb: "On first launch, head to Model Status (sidebar bottom) and click Download on each tile. Qwen 2.5 14B handles both tagging and chat (one file, two jobs), Nomic Embed v1.5 produces retrieval vectors, MiniCPM-V does smart OCR on scanned pages. About 14 GB total. Everything runs on your Mac — Settings ▸ AI Models ▸ Analyze My Mac picks the right defaults for your hardware.",
                 power: "GGUF Q4_K_M quants via llama.cpp + Metal. The Inference Engine setting lets you also stage an MLX bundle for Apple silicon."
             )
 
@@ -163,8 +163,8 @@ struct HelpView: View {
             ),
             FAQEntry(
                 q: "Which models do I actually need?",
-                a: "Mistral (chat) is the most important — without it, Document Chat won't work. Qwen (tagger) makes tagging accurate; without it, you'll get basic offline-rules tagging. MiniCPM-V (vision) is only needed for scanned PDFs or photographed receipts where the text isn't selectable.",
-                d: "Roles: .chat / .tagger / .vision. Offline fallback uses OfflineDocumentClassifier + Apple Vision OCR."
+                a: "Qwen 2.5 14B is the generalist — it handles both tagging AND chat from a single file. Nomic Embed v1.5 generates the retrieval vectors that power RAG search and chat citations. MiniCPM-V is only needed for scanned PDFs or photographed receipts where the text isn't selectable. All three are required for the full experience; without them you fall back to offline rules + Apple Vision OCR.",
+                d: "Roles: .tagger / .chat (share Qwen 14B), .embedding (Nomic), .vision (MiniCPM-V). Offline fallback uses OfflineDocumentClassifier + Apple Vision OCR."
             ),
             FAQEntry(
                 q: "What's that green pill under each document title?",
@@ -184,7 +184,7 @@ struct HelpView: View {
             FAQEntry(
                 q: "Can I use my own models?",
                 a: "Yes. Drop any GGUF file into ~/Library/Application Support/Athenaeum/Models with the expected filename and Athenaeum will pick it up on next launch. Model Status → Reveal in Finder gets you there in one click.",
-                d: "Filenames: Qwen2.5-7B-Instruct-Q4_K_M.gguf · Mistral-7B-Instruct-v0.3-Q4_K_M.gguf · ggml-model-Q4_K_M.gguf (for MiniCPM-V)."
+                d: "Filenames: Qwen2.5-14B-Instruct-Q4_K_M.gguf (tagger + chat) · nomic-embed-text-v1.5.Q4_K_M.gguf (embeddings) · ggml-model-Q4_K_M.gguf (MiniCPM-V)."
             ),
         ]
     }
@@ -255,7 +255,7 @@ struct HelpView: View {
             VStack(alignment: .leading, spacing: Japandi.Spacing.sm) {
                 bulletRow(
                     title: "Models",
-                    body: "llama.cpp via the prebuilt llama.xcframework. Three roles: tagger (Qwen 2.5 7B Q4_K_M), chat (Mistral 7B Q4_K_M), vision (MiniCPM-V 2.6 Q4_K_M). GPU layers default to All on Apple silicon."
+                    body: "llama.cpp via the prebuilt llama.xcframework. Four roles: tagger + chat both ride Qwen 2.5 14B Q4_K_M (one file, shared in-RAM context), embedding uses Nomic Embed Text v1.5 Q4_K_M, vision uses MiniCPM-V 2.6 Q4_K_M. GPU layers default to All on Apple silicon."
                 )
                 bulletRow(
                     title: "Retrieval",

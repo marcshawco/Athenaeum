@@ -489,7 +489,8 @@ final class DocumentProcessor {
             )
             let classification = ensureUsefulTags(
                 parseClassification(response) ?? fallback,
-                fallback: fallback
+                fallback: fallback,
+                existingTagNames: existingTags
             )
             applyClassification(classification, to: document)
         } catch {
@@ -525,19 +526,36 @@ final class DocumentProcessor {
 
     private func ensureUsefulTags(
         _ classification: DocumentClassification,
-        fallback: DocumentClassification
+        fallback: DocumentClassification,
+        existingTagNames: [String]
     ) -> DocumentClassification {
         var repaired = classification
-        var tags = Set(repaired.tags.map(normalizeTagName).filter { !$0.isEmpty })
+        let normalized = repaired.tags.map(normalizeTagName).filter { !$0.isEmpty }
 
-        if tags.count < 2 {
-            tags.formUnion(fallback.tags.map(normalizeTagName).filter { !$0.isEmpty })
+        // Validate against the union of (built-in pool + the user's existing
+        // tags). The prompt instructs the LLM not to invent tags, but smaller
+        // models still hallucinate — anything outside this allow-list is
+        // dropped on the floor.
+        let allowed = Set(Tag.builtInPool).union(existingTagNames.map { $0.lowercased() })
+        var tags = Set(normalized.filter { allowed.contains($0) })
+
+        // Strip the document_type slug if the model also emitted it as a tag —
+        // it's already represented via `documentTypeSlug` on the Document.
+        if let typeSlug = repaired.documentType?.nilIfBlank.map({ normalizeTagName($0) }) {
+            tags.remove(typeSlug)
+        }
+
+        // Only fall back to the offline keyword classifier if the LLM gave us
+        // nothing at all. Merging offline tags into a partial LLM result was
+        // contaminating accurate classifications with stray keyword matches —
+        // e.g. a resume mentioning "tax-advantaged 401k" picked up a `tax`
+        // tag, a brand strategy doc mentioning "lease" picked up `lease`.
+        if tags.isEmpty {
+            let fallbackTags = fallback.tags.map(normalizeTagName).filter { !$0.isEmpty }
+            tags.formUnion(fallbackTags.filter { allowed.contains($0) })
         }
 
         if tags.isEmpty {
-            tags.insert("document")
-            tags.insert("to-review")
-        } else if tags.count == 1 {
             tags.insert("to-review")
         }
 

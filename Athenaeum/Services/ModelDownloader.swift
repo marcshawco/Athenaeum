@@ -50,35 +50,35 @@ final class ModelDownloader {
         let expectedSize: Int64 // bytes, approximate
 
         static let defaults: [HFModelInfo] = [
+            // Generalist text model — serves both tagger and chat roles.
+            // One file, one download, one in-RAM context.
             HFModelInfo(
                 role: .tagger,
-                repoID: "bartowski/Qwen2.5-7B-Instruct-GGUF",
-                filename: "Qwen2.5-7B-Instruct-Q4_K_M.gguf",
-                expectedSize: 4_700_000_000
+                repoID: "bartowski/Qwen2.5-14B-Instruct-GGUF",
+                filename: "Qwen2.5-14B-Instruct-Q4_K_M.gguf",
+                expectedSize: 9_000_000_000
             ),
             HFModelInfo(
                 role: .chat,
-                repoID: "bartowski/Mistral-7B-Instruct-v0.3-GGUF",
-                filename: "Mistral-7B-Instruct-v0.3-Q4_K_M.gguf",
-                expectedSize: 4_400_000_000
+                repoID: "bartowski/Qwen2.5-14B-Instruct-GGUF",
+                filename: "Qwen2.5-14B-Instruct-Q4_K_M.gguf",
+                expectedSize: 9_000_000_000
+            ),
+            // Purpose-built retrieval embedding model. Tiny next to the
+            // text generalist (~280 MB) and trained contrastively for
+            // similarity — strictly better than recycling a chat LLM's
+            // hidden state.
+            HFModelInfo(
+                role: .embedding,
+                repoID: "nomic-ai/nomic-embed-text-v1.5-GGUF",
+                filename: "nomic-embed-text-v1.5.Q4_K_M.gguf",
+                expectedSize: 280_000_000
             ),
             HFModelInfo(
                 role: .vision,
                 repoID: "openbmb/MiniCPM-V-2_6-gguf",
                 filename: "ggml-model-Q4_K_M.gguf",
                 expectedSize: 5_000_000_000
-            ),
-            // Optional premium chat model — Gemma 3 4B Instruct, 4-bit
-            // quant. ~2.6 GB, noticeably sharper than Mistral on
-            // instruction-following + multilingual chat. Once downloaded,
-            // `LocalLLMService.contextForRole(.chat)` prefers it.
-            HFModelInfo(
-                role: .chatPlus,
-                // Bartowski's Gemma 3 quants live under the
-                // google_ org-prefixed repo+filename convention.
-                repoID: "bartowski/google_gemma-3-4b-it-GGUF",
-                filename: "google_gemma-3-4b-it-Q4_K_M.gguf",
-                expectedSize: 2_600_000_000
             ),
         ]
     }
@@ -93,6 +93,24 @@ final class ModelDownloader {
     func startDownload(for role: LLMRole) {
         guard let modelInfo = HFModelInfo.defaults.first(where: { $0.role == role }) else { return }
         guard activeTasks[role] == nil else { return }
+
+        // Tagger and chat share a model file (Qwen 14B). If the file is
+        // already on disk because the sibling role downloaded it, flip
+        // straight to completed without hitting the network.
+        let destination = modelsDirectory.appendingPathComponent(modelInfo.filename)
+        if FileManager.default.fileExists(atPath: destination.path),
+           let size = try? FileManager.default.attributesOfItem(atPath: destination.path)[.size] as? NSNumber,
+           size.int64Value > 1_000_000 {
+            downloads[role] = DownloadState(
+                status: .completed,
+                progress: 1.0,
+                bytesWritten: size.int64Value,
+                totalBytes: size.int64Value,
+                speed: ""
+            )
+            NotificationCenter.default.post(name: .modelsDidChange, object: nil)
+            return
+        }
 
         let url = huggingFaceURL(repo: modelInfo.repoID, filename: modelInfo.filename)
         let task = session.downloadTask(with: url)
