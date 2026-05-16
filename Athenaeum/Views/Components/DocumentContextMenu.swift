@@ -51,19 +51,60 @@ struct DocumentContextMenu: ViewModifier {
 
                 Divider()
 
+                // Copy submenu — covers every shape of "get this somewhere else".
+                Menu {
+                    Button {
+                        copyFileToPasteboard()
+                    } label: {
+                        Label("Copy File", systemImage: "doc.on.doc")
+                    }
+                    .disabled(existingStoredURL == nil)
+
+                    Button {
+                        copyFilePath()
+                    } label: {
+                        Label("Copy File Path", systemImage: "text.line.first.and.arrowtriangle.forward")
+                    }
+                    .disabled(existingStoredURL == nil)
+
+                    Button {
+                        copyTitle()
+                    } label: {
+                        Label("Copy Title", systemImage: "textformat")
+                    }
+
+                    Button {
+                        copyExtractedText()
+                    } label: {
+                        Label("Copy Extracted Text", systemImage: "doc.on.clipboard")
+                    }
+                    .disabled(document.extractedText == nil)
+
+                    if let summary = document.summary, !summary.isEmpty {
+                        Button {
+                            copyToPasteboard(summary)
+                        } label: {
+                            Label("Copy Summary", systemImage: "text.alignleft")
+                        }
+                    }
+                } label: {
+                    Label("Copy", systemImage: "doc.on.doc")
+                }
+
+                // Share — native macOS Share Sheet (Mail, Messages, AirDrop, etc.)
+                Button {
+                    presentShareSheet()
+                } label: {
+                    Label("Share…", systemImage: "square.and.arrow.up")
+                }
+                .disabled(existingStoredURL == nil && document.fileData == nil)
+
                 // Export
                 Button {
                     exportDocument()
                 } label: {
-                    Label("Export Original...", systemImage: "square.and.arrow.up")
+                    Label("Export Original…", systemImage: "tray.and.arrow.up")
                 }
-
-                Button {
-                    copyExtractedText()
-                } label: {
-                    Label("Copy Extracted Text", systemImage: "doc.on.clipboard")
-                }
-                .disabled(document.extractedText == nil)
 
                 Divider()
 
@@ -142,8 +183,53 @@ struct DocumentContextMenu: ViewModifier {
 
     private func copyExtractedText() {
         guard let text = document.extractedText else { return }
+        copyToPasteboard(text)
+    }
+
+    /// Writes the file URL onto the pasteboard so the user can paste it into
+    /// Finder, Mail, Messages, etc. — same as Cmd-C on a file in Finder.
+    private func copyFileToPasteboard() {
+        guard let url = existingStoredURL else { return }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.writeObjects([url as NSURL])
+    }
+
+    /// Copies the absolute filesystem path as a plain string. Useful for
+    /// pasting into Terminal or a `cd` prompt.
+    private func copyFilePath() {
+        guard let url = existingStoredURL else { return }
+        copyToPasteboard(url.path)
+    }
+
+    private func copyTitle() {
+        copyToPasteboard(document.title)
+    }
+
+    private func copyToPasteboard(_ text: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
+    }
+
+    /// Opens the macOS Share Sheet anchored to the key window. Works for
+    /// AirDrop, Mail, Messages, Notes, and any third-party share extension.
+    private func presentShareSheet() {
+        let urlToShare: URL?
+        if let stored = existingStoredURL {
+            urlToShare = stored
+        } else if let data = document.fileData {
+            let tempURL = temporaryURL(for: document)
+            try? data.write(to: tempURL, options: .atomic)
+            urlToShare = tempURL
+        } else {
+            urlToShare = nil
+        }
+        guard let url = urlToShare else { return }
+        let picker = NSSharingServicePicker(items: [url])
+        if let window = NSApp.keyWindow,
+           let contentView = window.contentView {
+            picker.show(relativeTo: .zero, of: contentView, preferredEdge: .minY)
+        }
     }
 
     private func reprocessDocument() {

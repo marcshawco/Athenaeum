@@ -20,20 +20,74 @@ final class DocumentVaultService {
     private init() {}
 
     var vaultURL: URL {
-        if let bookmarkURL = resolveBookmarkedVaultURL() {
+        if let bookmarkURL = resolveBookmarkedVaultURL(),
+           isWritable(bookmarkURL) {
             return bookmarkURL
         }
 
-        if let path = UserDefaults.standard.string(forKey: pathKey), !path.isEmpty {
+        if let path = UserDefaults.standard.string(forKey: pathKey),
+           !path.isEmpty,
+           isWritable(URL(fileURLWithPath: path, isDirectory: true)) {
             return URL(fileURLWithPath: path, isDirectory: true)
         }
 
+        // No persisted location works — clear stale defaults so we don't keep
+        // re-trying the dead path on every launch, then fall through to the
+        // default location below.
+        if UserDefaults.standard.object(forKey: bookmarkKey) != nil ||
+           UserDefaults.standard.object(forKey: pathKey) != nil {
+            UserDefaults.standard.removeObject(forKey: bookmarkKey)
+            UserDefaults.standard.removeObject(forKey: pathKey)
+        }
+
+        return defaultVaultURL
+    }
+
+    /// The vault location we'd use if no user override is set. Lives under
+    /// ~/Documents/Athenaeum Library by default (visible in Finder), with a
+    /// sandbox-safe fallback under Application Support.
+    var defaultVaultURL: URL {
         let documents = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first
         let preferred = documents?.appendingPathComponent("Athenaeum Library", isDirectory: true)
         let fallback = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)
             .first!
             .appendingPathComponent("Athenaeum/Document Vault", isDirectory: true)
         return preferred ?? fallback
+    }
+
+    /// Returns true when the given directory is writeable from the current
+    /// sandbox. Cheap probe — creates and removes a unique temp file rather
+    /// than relying on `FileManager.isWritableFile`, which lies when the
+    /// path used to be readable but its security scope has expired.
+    private func isWritable(_ url: URL) -> Bool {
+        let accessing = url.startAccessingSecurityScopedResource()
+        defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+        do {
+            try fileManager.createDirectory(at: url, withIntermediateDirectories: true)
+        } catch {
+            return false
+        }
+        let probe = url.appendingPathComponent(".athenaeum-write-probe-\(UUID().uuidString)")
+        do {
+            try Data().write(to: probe)
+            try? fileManager.removeItem(at: probe)
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    /// Drop any stored vault override (bookmark + path) and revert to the
+    /// default location under ~/Documents. Surfaced as Settings ▸ Storage ▸
+    /// "Reset vault to default" so users can recover from the stale-bookmark
+    /// error ("Failed to scan document vault: You don't have permission…").
+    func resetToDefaultVault() throws {
+        UserDefaults.standard.removeObject(forKey: bookmarkKey)
+        UserDefaults.standard.removeObject(forKey: pathKey)
+        let url = defaultVaultURL
+        try fileManager.createDirectory(at: url, withIntermediateDirectories: true)
+        UserDefaults.standard.set(url.path, forKey: pathKey)
+        NotificationCenter.default.post(name: Self.vaultDidChangeNotification, object: nil)
     }
 
     @discardableResult

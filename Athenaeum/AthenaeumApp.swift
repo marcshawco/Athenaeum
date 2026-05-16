@@ -65,4 +65,6 @@ extension Notification.Name {
     static let mlxBundlesDidChange = Notification.Name("mlxBundlesDidChange")
     static let tagsDidChange      = Notification.Name("tagsDidChange")
     static let scanFolderForImport = Notification.Name("scanFolderForImport")
+    static let rebuildVectorIndex = Notification.Name("rebuildVectorIndex")
+    static let autoScanFoldersDidChange = Notification.Name("autoScanFoldersDidChange")
 }

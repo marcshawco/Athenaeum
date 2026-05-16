@@ -367,7 +367,7 @@ struct DocumentGridView: View {
         let panel = NSOpenPanel()
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
-        panel.allowedContentTypes = [.pdf, .plainText, .rtf, .rtfd, .image, .audio, .movie, .data]
+        panel.allowedContentTypes = ContentView.importableContentTypes
         panel.message = "Select documents to import into Athenaeum"
         if panel.runModal() == .OK { onImport(panel.urls) }
     }

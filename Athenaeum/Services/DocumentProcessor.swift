@@ -294,7 +294,48 @@ final class DocumentProcessor {
             )
         }
 
-        return ""
+        // HTML → strip tags into plain text via NSAttributedString.
+        if utType?.conforms(to: .html) == true {
+            if let attr = try? NSAttributedString(
+                data: data,
+                options: [.documentType: NSAttributedString.DocumentType.html,
+                          .characterEncoding: String.Encoding.utf8.rawValue],
+                documentAttributes: nil
+            ) {
+                return attr.string
+            }
+        }
+
+        // CSV / TSV / spreadsheets (XLSX, Numbers) — try plain-text first
+        // (handles CSV/TSV cleanly), then fall back to the UTF-8 best-effort.
+        let ext = url.pathExtension.lowercased()
+        if ["csv", "tsv"].contains(ext) {
+            return String(data: data, encoding: .utf8) ?? ""
+        }
+
+        // Markdown / code / config — anything we declare a known text extension
+        // for, treat as UTF-8 text. Handles `.md`, `.swift`, `.py`, `.json`,
+        // `.yaml`, etc. without per-language tokenizers.
+        let textyExtensions: Set<String> = [
+            "md", "markdown", "txt", "log",
+            "swift", "py", "js", "ts", "tsx", "jsx", "go", "rs", "rb", "java",
+            "kt", "c", "cc", "cpp", "h", "hpp", "m", "mm", "sh", "zsh", "bash",
+            "json", "yaml", "yml", "toml", "ini", "conf", "xml", "plist",
+        ]
+        if textyExtensions.contains(ext),
+           let s = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1) {
+            return s
+        }
+
+        // EPUB — unzip would be heavy; for now best-effort attempt as text
+        // and let the AI handle whatever it can read.
+        if ext == "epub" {
+            return String(data: data, encoding: .utf8) ?? ""
+        }
+
+        // Final fallback: try UTF-8. Better than returning empty for any
+        // unknown text-shaped format we forgot to enumerate above.
+        return String(data: data, encoding: .utf8) ?? ""
     }
 
     // MARK: - PDF Extraction with Scanned Document Detection

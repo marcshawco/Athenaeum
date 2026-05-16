@@ -441,7 +441,7 @@ enum LlamaError: LocalizedError {
         case .modelNotLoaded:        "Model not loaded — call load() first"
         case .failedToLoad:          "Failed to load GGUF model"
         case .failedToCreateContext: "Failed to create llama.cpp context"
-        case .decodeFailed:          "Token decode failed"
+        case .decodeFailed:          "Token decode failed — the prompt likely exceeded the model's context window. Try Settings ▸ Storage ▸ Rebuild Vector Index, or ask a shorter question."
         case .tokenizationFailed:    "Tokenization failed"
         case .embeddingFailed:       "Embedding generation failed"
         case .notLinked:             "llama.cpp not linked — add the SPM package in Xcode"

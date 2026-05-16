@@ -39,12 +39,18 @@ struct MLXBundleDescriptor: Sendable, Hashable {
         revision: "main",
         expectedSize: 4_300_000_000,
         roles: [.tagger, .chat],
+        // Order matters for resume-friendly progress: small JSON first, then
+        // tokenizer.json (~7 MB), then the big safetensors weights last so
+        // that an early cancellation doesn't waste a multi-gigabyte fetch.
+        // `model.safetensors.index.json` is *optional* — only sharded repos
+        // ship it, and Qwen 2.5 7B 4bit MLX is a single file. The downloader
+        // tolerates 404s for files in its `optionalFiles` set.
         files: [
             "config.json",
-            "tokenizer.json",
             "tokenizer_config.json",
             "special_tokens_map.json",
-            "model.safetensors.index.json",
+            "tokenizer.json",
+            "model.safetensors.index.json",   // optional (single-file repos 404)
             "model.safetensors",
         ]
     )
@@ -78,12 +84,20 @@ final class MLXModelManager {
         bundlesDirectory.appendingPathComponent(descriptor.id, isDirectory: true)
     }
 
-    /// True when *every* required file in `descriptor.files` exists on disk.
-    /// Partial downloads do not count — we want all-or-nothing semantics so
-    /// inference doesn't try to load against a torn bundle.
+    /// Files we tolerate being absent (single-file MLX repos return 404 for
+    /// the index, for example). Must match `MLXBundleDownloader.optionalFiles`.
+    private static let optionalFiles: Set<String> = [
+        "model.safetensors.index.json",
+        "added_tokens.json",
+        "merges.txt",
+        "chat_template.jinja",
+    ]
+
+    /// True when every *required* file in `descriptor.files` exists on disk.
+    /// Optional files (404-tolerated) don't gate completion.
     func isFullyInstalled(_ descriptor: MLXBundleDescriptor) -> Bool {
         let dir = directory(for: descriptor)
-        for relative in descriptor.files {
+        for relative in descriptor.files where !Self.optionalFiles.contains(relative) {
             let path = dir.appendingPathComponent(relative).path
             if !FileManager.default.fileExists(atPath: path) { return false }
         }

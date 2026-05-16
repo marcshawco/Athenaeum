@@ -13,11 +13,15 @@ struct SettingsView: View {
     @AppStorage("inferenceEngine") private var inferenceEngineRaw: String = InferenceEngine.llamaCpp.rawValue
     @State private var vaultPath = DocumentVaultService.shared.vaultURL.path
     @State private var selection: SettingsTab = .general
+    /// First time Settings opens we land on Help & Tour instead of General, so
+    /// new users see the onboarding tour without having to hunt for it.
+    @AppStorage("hasOpenedHelp") private var hasOpenedHelp: Bool = false
 
     var modelManager: ModelManager
+    var autoScanRegistry: AutoScanRegistry
 
     enum SettingsTab: Hashable {
-        case general, ai, tags, storage, about
+        case help, general, ai, autoscan, tags, storage, about
     }
 
     var body: some View {
@@ -35,6 +39,10 @@ struct SettingsView: View {
         .background(Japandi.Colors.bgFallback)
         .onAppear {
             vaultPath = DocumentVaultService.shared.vaultURL.path
+            if !hasOpenedHelp {
+                selection = .help
+                hasOpenedHelp = true
+            }
         }
     }
 
@@ -68,11 +76,13 @@ struct SettingsView: View {
 
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 2) {
-            sidebarRow(.general, icon: "gear",         label: "General")
-            sidebarRow(.ai,      icon: "cpu",          label: "AI Models")
-            sidebarRow(.tags,    icon: "tag",          label: "Tag Library")
-            sidebarRow(.storage, icon: "internaldrive",label: "Storage")
-            sidebarRow(.about,   icon: "info.circle",  label: "About")
+            sidebarRow(.help,     icon: "questionmark.circle", label: "Help & Tour")
+            sidebarRow(.general,  icon: "gear",          label: "General")
+            sidebarRow(.ai,       icon: "cpu",           label: "AI Models")
+            sidebarRow(.autoscan, icon: "folder.badge.gearshape", label: "Auto-Scan")
+            sidebarRow(.tags,     icon: "tag",           label: "Tag Library")
+            sidebarRow(.storage,  icon: "internaldrive", label: "Storage")
+            sidebarRow(.about,    icon: "info.circle",   label: "About")
             Spacer()
         }
         .padding(.horizontal, Japandi.Spacing.xs)
@@ -124,11 +134,13 @@ struct SettingsView: View {
         ScrollView {
             Group {
                 switch selection {
-                case .general: generalTab
-                case .ai:      aiTab
-                case .tags:    TagLibraryView()
-                case .storage: storageTab
-                case .about:   aboutTab
+                case .help:     HelpView()
+                case .general:  generalTab
+                case .ai:       aiTab
+                case .autoscan: AutoScanSettingsView(registry: autoScanRegistry)
+                case .tags:     TagLibraryView()
+                case .storage:  storageTab
+                case .about:    aboutTab
                 }
             }
             .padding(Japandi.Spacing.lg)
@@ -564,6 +576,29 @@ struct SettingsView: View {
                         integrityResultView(report)
                     }
                 }
+
+                Divider().foregroundStyle(Japandi.Colors.borderFallback)
+
+                VStack(alignment: .leading, spacing: Japandi.Spacing.xs) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Rebuild vector index")
+                                .font(Japandi.Typography.body)
+                                .foregroundStyle(Japandi.Colors.textPrimaryFB)
+                            Text("Drops every embedding and re-embeds your live documents. Use this if chat returns sources you no longer have.")
+                                .font(Japandi.Typography.caption)
+                                .foregroundStyle(Japandi.Colors.textTertiaryFB)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Spacer()
+                        Button("Rebuild now") {
+                            NotificationCenter.default.post(name: .rebuildVectorIndex, object: nil)
+                            dismiss()
+                        }
+                        .controlSize(.small)
+                        .tint(Japandi.Colors.warmFallback)
+                    }
+                }
             }
 
             Section("Data Location") {
@@ -582,6 +617,10 @@ struct SettingsView: View {
                             Button("Reveal") {
                                 DocumentVaultService.shared.revealVault()
                             }
+                            Button("Reset to default") {
+                                resetVaultToDefault()
+                            }
+                            .help("Recover from a stale bookmark (\u{201C}You don\u{2019}t have permission\u{2026}\u{201D})")
                             Button("Scan Now") {
                                 NotificationCenter.default.post(name: .scanDocumentVault, object: nil)
                             }
@@ -722,6 +761,19 @@ struct SettingsView: View {
                 }
             }
             .padding(.leading, Japandi.Spacing.sm)
+        }
+    }
+
+    /// Drops the stored vault override and reverts to ~/Documents/Athenaeum
+    /// Library. Use this when the prior vault URL is no longer accessible
+    /// (e.g. the folder was deleted, or a UI-test bookmark went stale).
+    private func resetVaultToDefault() {
+        do {
+            try DocumentVaultService.shared.resetToDefaultVault()
+            vaultPath = DocumentVaultService.shared.vaultURL.path
+            NotificationCenter.default.post(name: .scanDocumentVault, object: nil)
+        } catch {
+            NSSound.beep()
         }
     }
 

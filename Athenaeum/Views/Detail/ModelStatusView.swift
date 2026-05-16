@@ -323,17 +323,18 @@ struct ModelStatusView: View {
             }
 
             if let state, state.status == .downloading {
-                VStack(spacing: Japandi.Spacing.xxs) {
+                VStack(alignment: .leading, spacing: Japandi.Spacing.xxs) {
                     ProgressView(value: state.progress)
                         .tint(Japandi.Colors.accentFallback)
+
+                    // Top row: cumulative bundle progress + cancel button.
                     HStack {
                         Text(ByteCountFormatter.string(fromByteCount: state.bytesWritten, countStyle: .file))
+                            + Text(" / ")
+                            + Text(ByteCountFormatter.string(fromByteCount: max(state.totalBytes, state.bytesWritten), countStyle: .file))
                         Spacer()
-                        Text(state.currentFile)
-                            .font(.system(size: 9.5, design: .monospaced))
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                        Spacer()
+                        Text("\(Int(state.progress * 100))%")
+                            .font(.system(size: 10, design: .monospaced))
                         Button {
                             mlxDownloader?.cancelDownload(descriptor)
                         } label: {
@@ -341,8 +342,31 @@ struct ModelStatusView: View {
                                 .font(.system(size: 9))
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel("Cancel download")
                     }
                     .font(Japandi.Typography.caption)
+                    .foregroundStyle(Japandi.Colors.textTertiaryFB)
+
+                    // Bottom row: live per-file progress so the user can see
+                    // the 4 GB safetensors is actually moving.
+                    HStack(spacing: 4) {
+                        Text(state.currentFile)
+                            .font(.system(size: 9.5, design: .monospaced))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        if state.currentFileTotal > 0 {
+                            Text("·")
+                            Text(ByteCountFormatter.string(fromByteCount: state.currentFileBytes, countStyle: .file))
+                                .font(.system(size: 9.5, design: .monospaced))
+                            Text("/")
+                            Text(ByteCountFormatter.string(fromByteCount: state.currentFileTotal, countStyle: .file))
+                                .font(.system(size: 9.5, design: .monospaced))
+                        } else if state.currentFileBytes > 0 {
+                            Text("·")
+                            Text(ByteCountFormatter.string(fromByteCount: state.currentFileBytes, countStyle: .file))
+                                .font(.system(size: 9.5, design: .monospaced))
+                        }
+                    }
                     .foregroundStyle(Japandi.Colors.textTertiaryFB)
                 }
             } else if let state, state.status == .failed, let message = state.failureMessage {

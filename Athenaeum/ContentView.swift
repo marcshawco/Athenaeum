@@ -24,6 +24,8 @@ struct ContentView: View {
     @State private var ragService: RAGService?
     @State private var vaultMonitor = DocumentVaultMonitor()
     @State private var mlxManager = MLXModelManager()
+    @State private var autoScanRegistry = AutoScanRegistry()
+    @State private var autoScanCoordinator: AutoScanCoordinator?
     @AppStorage("inferenceEngine") private var inferenceEngineRaw: String = InferenceEngine.llamaCpp.rawValue
 
     // UI state
@@ -52,6 +54,12 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .scanFolderForImport)) { _ in
             openFolderForImport()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .rebuildVectorIndex)) { _ in
+            rebuildVectorIndex()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .autoScanFoldersDidChange)) { _ in
+            autoScanCoordinator?.restart()
         }
         .onReceive(NotificationCenter.default.publisher(for: .openSettings)) { _ in
             showSettings = true
@@ -91,7 +99,7 @@ struct ContentView: View {
             modelManager.scanForModels()
         }
         .sheet(isPresented: $showSettings) {
-            SettingsView(modelManager: modelManager)
+            SettingsView(modelManager: modelManager, autoScanRegistry: autoScanRegistry)
         }
     }
 
@@ -211,6 +219,28 @@ struct ContentView: View {
                 && !indexed.contains(doc.id)
         }
         await MainActor.run { reindexCandidates = candidates.count }
+    }
+
+    private func rebuildVectorIndex() {
+        guard let ragService else { return }
+        isReindexing = true
+        Task {
+            let fetch = FetchDescriptor<Document>()
+            let docs = (try? modelContext.fetch(fetch)) ?? []
+            let items = docs.compactMap { doc -> (id: UUID, text: String)? in
+                guard doc.processingStatus == .complete,
+                      let text = doc.extractedText, !text.isEmpty else { return nil }
+                return (doc.id, text)
+            }
+            do {
+                try await ragService.rebuildIndex(from: items)
+                await refreshReindexCandidates()
+                await showBanner("Vector index rebuilt — \(items.count) document\(items.count == 1 ? "" : "s")")
+            } catch {
+                await showBanner("Rebuild failed: \(error.localizedDescription)")
+            }
+            await MainActor.run { isReindexing = false }
+        }
     }
 
     private func reindexLibrary() {
@@ -382,6 +412,12 @@ struct ContentView: View {
         ragService = rag
 
         processor = DocumentProcessor(llmService: service, ragService: rag, modelContext: modelContext)
+        // Hand the processor to the auto-scan coordinator so it can route
+        // freshly-detected files straight into the import + tag pipeline.
+        let coordinator = AutoScanCoordinator(registry: autoScanRegistry)
+        coordinator.attach(processor: processor!)
+        autoScanCoordinator = coordinator
+        coordinator.restart()
         _ = try? DocumentVaultService.shared.prepareVault()
         restartVaultMonitor()
 
@@ -390,7 +426,22 @@ struct ContentView: View {
             await reconcileDocumentsWithVault()
             // Re-index any already-processed documents the first time the vector store is empty
             await indexExistingDocumentsIfNeeded(ragService: rag)
+            // Sweep the vector store for orphan embeddings whose documents
+            // were removed without the index being told. Cheap and idempotent.
+            await pruneOrphanEmbeddings(ragService: rag)
             await scanDocumentVaultOnLaunch()
+        }
+    }
+
+    @MainActor
+    private func pruneOrphanEmbeddings(ragService: RAGService) async {
+        let fetch = FetchDescriptor<Document>()
+        let docs = (try? modelContext.fetch(fetch)) ?? []
+        let liveIDs = Set(docs.map(\.id))
+        let removed = await ragService.pruneOrphans(liveDocumentIDs: liveIDs)
+        if removed > 0 {
+            await showBanner("Cleared \(removed) orphan chunk\(removed == 1 ? "" : "s") from index")
+            await refreshReindexCandidates()
         }
     }
 
@@ -534,11 +585,32 @@ struct ContentView: View {
         selectedDocuments = selectedDocuments.filter { !deletedIDs.contains($0.id) }
     }
 
+    /// Broad UTType allow-list for the import dialog. We pick *families*
+    /// (e.g. `.text`, `.image`, `.spreadsheet`) so users see every supported
+    /// extension as enabled in the open panel, then post-filter against
+    /// `AutoScanCoordinator.supportedExtensions` if needed.
+    static let importableContentTypes: [UTType] = {
+        var types: [UTType] = [
+            .pdf, .plainText, .rtf, .rtfd, .html, .text,
+            .image, .png, .jpeg, .tiff, .heic, .gif, .bmp, .webP,
+            .commaSeparatedText, .tabSeparatedText, .spreadsheet,
+            .presentation, .epub,
+            .sourceCode, .json, .xml, .yaml,
+            .data,
+        ]
+        // .markdown is iOS 17+/macOS 14+ — guard cleanly without crashing on older SDKs.
+        if let md = UTType("net.daringfireball.markdown") { types.append(md) }
+        if let docx = UTType("org.openxmlformats.wordprocessingml.document") { types.append(docx) }
+        if let xlsx = UTType("org.openxmlformats.spreadsheetml.sheet") { types.append(xlsx) }
+        if let pptx = UTType("org.openxmlformats.presentationml.presentation") { types.append(pptx) }
+        return types
+    }()
+
     private func openFilePicker() {
         let panel = NSOpenPanel()
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
-        panel.allowedContentTypes = [.pdf, .plainText, .rtf, .rtfd, .image, .audio, .movie, .data]
+        panel.allowedContentTypes = Self.importableContentTypes
         panel.message = "Select documents to import into Athenaeum"
         panel.directoryURL = DocumentVaultService.shared.vaultURL
 
@@ -563,10 +635,7 @@ struct ContentView: View {
 
         // Walk the folder. We rely on the same extension allow-list as the
         // single-file picker to avoid sucking in random binaries.
-        let allowedExtensions: Set<String> = [
-            "pdf", "txt", "rtf", "rtfd", "doc", "docx", "md", "html", "htm",
-            "png", "jpg", "jpeg", "tif", "tiff", "heic", "webp", "gif", "bmp"
-        ]
+        let allowedExtensions = AutoScanCoordinator.supportedExtensions
 
         Task.detached(priority: .userInitiated) {
             var urls: [URL] = []

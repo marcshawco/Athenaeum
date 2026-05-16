@@ -123,23 +123,57 @@ final class RAGService {
     ) async throws -> (stream: AsyncThrowingStream<String, Error>, sources: [RAGSource]) {
         let retrievalQuery = retrievalQuery(for: question, history: history)
         let queryEmbedding = try await generateEmbedding(for: retrievalQuery)
-        let results = await retrieveRelevantChunks(queryEmbedding: queryEmbedding, maxContext: maxContext)
+        // Hand the caller's live document set to the retriever so orphan
+        // chunks from deleted/renamed docs can't poison the prompt.
+        let liveIDs: Set<UUID>? = fallbackDocuments.isEmpty
+            ? nil
+            : Set(fallbackDocuments.map(\.id))
+        let results = await retrieveRelevantChunks(
+            queryEmbedding: queryEmbedding,
+            maxContext: maxContext,
+            knownDocumentIDs: liveIDs
+        )
 
         let fallbackChunks = results.isEmpty
             ? fallbackContextChunks(for: retrievalQuery, documents: fallbackDocuments, maxContext: maxContext)
             : []
         let documentLookup = Dictionary(uniqueKeysWithValues: fallbackDocuments.map { ($0.id, $0.title) })
 
+        // Context budget: llama.cpp is configured with a 4 K context window
+        // and we reserve ~1 K for the generated answer + system + history.
+        // 8000 chars ≈ 2 K tokens, which keeps the prompt comfortably inside
+        // the budget so the sampler doesn't drift into invalid tokens
+        // (the "Token decode failed" trail).
+        let perChunkCharBudget = 1200
+        let totalContextCharBudget = 8000
+
+        func packChunks<T>(_ items: [T], titleFor: (T) -> String, textFor: (T) -> String) -> String {
+            var blocks: [String] = []
+            var used = 0
+            for (i, item) in items.enumerated() {
+                let trimmed = String(textFor(item).prefix(perChunkCharBudget))
+                let block = "[Source \(i + 1)] \(titleFor(item))\n\(trimmed)"
+                if used + block.count > totalContextCharBudget && !blocks.isEmpty { break }
+                blocks.append(block)
+                used += block.count
+            }
+            return blocks.joined(separator: "\n\n")
+        }
+
         let contextText: String
         if !results.isEmpty {
-            contextText = results.enumerated().map { i, r in
-                let title = documentLookup[r.entry.documentID] ?? "Document \(r.entry.documentID.uuidString.prefix(8))"
-                return "[Source \(i + 1)] \(title)\n\(r.entry.text)"
-            }.joined(separator: "\n\n")
+            contextText = packChunks(
+                results,
+                titleFor: { documentLookup[$0.entry.documentID]
+                            ?? "Document \($0.entry.documentID.uuidString.prefix(8))" },
+                textFor: { $0.entry.text }
+            )
         } else if !fallbackChunks.isEmpty {
-            contextText = fallbackChunks.enumerated().map { i, chunk in
-                "[Source \(i + 1)] \(chunk.document.title)\n\(chunk.text)"
-            }.joined(separator: "\n\n")
+            contextText = packChunks(
+                fallbackChunks,
+                titleFor: { $0.document.title },
+                textFor: { $0.text }
+            )
         } else {
             contextText = "No documents are available yet. Ask the user to import and process documents first."
         }
@@ -158,8 +192,11 @@ final class RAGService {
                 \(contextText)
                 """)
         ]
-        // Include up to last 10 history turns (user + assistant only) for multi-turn context
-        let recentHistory = history.suffix(10).filter { $0.role == .user || $0.role == .assistant }
+        // Include up to last 6 history turns (user + assistant only) for
+        // multi-turn context. 10 was too aggressive — combined with retrieved
+        // chunks it could overflow the 4K context window and trigger the
+        // sampler's "Token decode failed" path.
+        let recentHistory = history.suffix(6).filter { $0.role == .user || $0.role == .assistant }
         messages.append(contentsOf: recentHistory)
         messages.append(ChatMessage(role: .user, content: question))
 
@@ -208,10 +245,61 @@ final class RAGService {
             .joined(separator: "\n")
     }
 
-    private func retrieveRelevantChunks(queryEmbedding: [Float], maxContext: Int) async -> [SearchResult] {
-        let strictResults = await vectorStore.search(query: queryEmbedding, topK: maxContext, threshold: 0.3)
-        if !strictResults.isEmpty { return strictResults }
-        return await vectorStore.search(query: queryEmbedding, topK: maxContext, threshold: -1)
+    private func retrieveRelevantChunks(
+        queryEmbedding: [Float],
+        maxContext: Int,
+        knownDocumentIDs: Set<UUID>? = nil
+    ) async -> [SearchResult] {
+        // Over-fetch so that filtering for live docs still leaves us with
+        // enough chunks to satisfy `maxContext`. 4× is plenty even when most
+        // of the index is orphaned.
+        let overfetch = max(maxContext * 4, 20)
+
+        func filterToLive(_ results: [SearchResult]) -> [SearchResult] {
+            guard let live = knownDocumentIDs else { return results }
+            return results.filter { live.contains($0.entry.documentID) }
+        }
+
+        let strictResults = await vectorStore.search(query: queryEmbedding, topK: overfetch, threshold: 0.3)
+        let strictLive = Array(filterToLive(strictResults).prefix(maxContext))
+        if !strictLive.isEmpty { return strictLive }
+
+        let looseResults = await vectorStore.search(query: queryEmbedding, topK: overfetch, threshold: -1)
+        let looseLive = Array(filterToLive(looseResults).prefix(maxContext))
+        return looseLive
+    }
+
+    // MARK: - Index sanitization
+
+    /// Drops every embedding whose document is not in `liveIDs`. Returns the
+    /// number of orphan entries removed. Cheap to run on launch / from a
+    /// "Rebuild Index" button — keeps the store in lock-step with SwiftData.
+    @discardableResult
+    func pruneOrphans(liveDocumentIDs: Set<UUID>) async -> Int {
+        let indexed = await vectorStore.indexedDocumentIDs
+        let orphans = indexed.subtracting(liveDocumentIDs)
+        for id in orphans {
+            await vectorStore.removeEntries(forDocument: id)
+        }
+        if !orphans.isEmpty {
+            try? await vectorStore.save()
+        }
+        return orphans.count
+    }
+
+    /// Nuke the entire index and re-embed every passed-in document. Used by
+    /// the "Rebuild Vector Index" action in Settings ▸ Storage.
+    func rebuildIndex(from documents: [(id: UUID, text: String)]) async throws {
+        // Clear by removing each known document; cheap and avoids touching
+        // VectorStore internals.
+        let existing = await vectorStore.indexedDocumentIDs
+        for id in existing {
+            await vectorStore.removeEntries(forDocument: id)
+        }
+        try? await vectorStore.save()
+        for doc in documents where !doc.text.isEmpty {
+            try await indexDocument(id: doc.id, text: doc.text)
+        }
     }
 
     // MARK: - Text Chunking
