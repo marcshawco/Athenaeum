@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <title>Athenaeum</title>
+  <defs>
+    
+  </defs>
+  <rect x="0" y="0" width="1024" height="1024" rx="224" ry="224" fill="#211F1B"></rect>
+  <text x="512" y="555" class="glyph" text-anchor="middle" dominant-baseline="middle">Æ</text>
+</svg>

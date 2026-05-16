@@ -1,0 +1,101 @@
+import Foundation
+import SwiftData
+
+@Model
+final class Document {
+    // MARK: - Identity
+    var id: UUID
+    var title: String
+    var originalFilename: String
+
+    // MARK: - Content
+    var fileType: String                   // UTType identifier string
+    var fileSize: Int64                     // bytes
+    var storagePath: String?                // Finder-visible vault location for the original file
+    @Attribute(.externalStorage)
+    var fileData: Data?                    // raw file stored externally by SwiftData
+
+    // MARK: - Extracted Content
+    @Attribute(.externalStorage)
+    var extractedText: String?             // OCR / parsed text
+    var summary: String?                   // LLM-generated summary
+
+    // MARK: - Organization
+    @Relationship(inverse: \Tag.documents)
+    var tags: [Tag]?
+
+    var correspondent: String?             // who sent / authored
+    var documentDate: Date?                // date from the document itself
+    var importedAt: Date
+    var modifiedAt: Date
+
+    // MARK: - Processing State
+    var processingStatus: ProcessingStatus
+    var processingError: String?
+
+    // MARK: - Search
+    var searchableText: String?            // combined index: title + tags + extracted text
+
+    init(
+        title: String,
+        originalFilename: String,
+        fileType: String,
+        fileSize: Int64,
+        fileData: Data? = nil,
+        documentDate: Date? = nil
+    ) {
+        self.id = UUID()
+        self.title = title
+        self.originalFilename = originalFilename
+        self.fileType = fileType
+        self.fileSize = fileSize
+        self.storagePath = nil
+        self.fileData = fileData
+        self.documentDate = documentDate
+        self.importedAt = .now
+        self.modifiedAt = .now
+        self.processingStatus = .pending
+        self.processingError = nil
+    }
+
+    func rebuildSearchableText() {
+        var parts: [String] = [title, originalFilename]
+        if let tags { parts.append(contentsOf: tags.map(\.name)) }
+        if let extractedText { parts.append(extractedText) }
+        if let correspondent { parts.append(correspondent) }
+        if let summary { parts.append(summary) }
+        if let processingError { parts.append(processingError) }
+        searchableText = parts.joined(separator: " ").lowercased()
+    }
+}
+
+// MARK: - Processing Status
+
+enum ProcessingStatus: String, Codable, Sendable {
+    case pending
+    case extractingText
+    case analyzingContent
+    case tagging
+    case complete
+    case failed
+}
+
+// MARK: - Convenience
+
+extension Document {
+    var fileSizeFormatted: String {
+        ByteCountFormatter.string(fromByteCount: fileSize, countStyle: .file)
+    }
+
+    var fileExtension: String {
+        (originalFilename as NSString).pathExtension.lowercased()
+    }
+
+    var isPDF: Bool { fileExtension == "pdf" }
+    var isImage: Bool { ["png", "jpg", "jpeg", "tif", "tiff", "heic", "webp", "gif", "bmp"].contains(fileExtension) }
+
+    var storedFileURL: URL? {
+        guard let storagePath, !storagePath.isEmpty else { return nil }
+        return URL(fileURLWithPath: storagePath)
+    }
+}

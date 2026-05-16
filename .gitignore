@@ -1,0 +1,13 @@
+.DS_Store
+
+# Xcode user-local state
+*.xcuserstate
+xcuserdata/
+
+# Swift/Xcode build output
+.build/
+DerivedData/
+build/
+
+# Local agent/tool permissions
+.claude/settings.local.json

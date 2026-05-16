@@ -1,0 +1,650 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Athenaeum — Brand kit</title>
+<link rel="icon" type="image/svg+xml" href="brand/favicon.svg" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,ital,wght@9..144,0,300;9..144,0,400;9..144,0,500;9..144,1,300;9..144,1,400&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg:       #EDE9DF;
+    --paper:    #FBFAF7;
+    --paper2:   #F4F2EC;
+    --ink:      #211F1B;
+    --ink2:     #5A554D;
+    --ink3:     #9C968B;
+    --rule:     #E6E1D5;
+    --ruleS:    #D8D2C4;
+    --forest:   #3E5C4A;
+    --forestD:  #243A2D;
+    --forestS:  #E6EBE3;
+    --darkAccent: #C8D4BE;
+    --warm:     #B98A4F;
+    --warmS:    #F3E6D3;
+  }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink); font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif; font-size: 13px; line-height: 1.55; }
+  .page { max-width: 1200px; margin: 0 auto; padding: 56px 40px 80px; }
+  .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+  .eyebrow { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: var(--ink3); }
+  .eyebrow .a { color: var(--forest); }
+  .h1 { font-family: "Fraunces", Georgia, serif; font-weight: 300; font-size: 44px; letter-spacing: -0.6px; line-height: 1; margin: 14px 0 8px; }
+  .h2 { font-family: "Fraunces", Georgia, serif; font-weight: 300; font-size: 26px; letter-spacing: -0.3px; line-height: 1.1; margin: 0; }
+  .lede { color: var(--ink2); max-width: 580px; font-size: 13.5px; }
+  .section { padding: 48px 0; border-bottom: 0.5px solid var(--ruleS); }
+  .section:last-child { border-bottom: none; }
+  .section-head { display: grid; grid-template-columns: 60px 1fr auto; gap: 24px; align-items: baseline; margin-bottom: 26px; }
+  .roman { font-family: "Fraunces", Georgia, serif; font-style: italic; font-weight: 300; font-size: 30px; color: var(--ink3); line-height: 1; }
+  .section-desc { color: var(--ink2); margin-top: 6px; max-width: 600px; font-size: 12.5px; }
+  .tag { font-family: ui-monospace, Menlo, monospace; font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--ink3); border: 0.5px solid var(--ruleS); padding: 3px 7px; border-radius: 3px; white-space: nowrap; }
+  .grid { display: grid; gap: 14px; }
+  .panel { background: var(--paper); border: 0.5px solid var(--rule); border-radius: 10px; padding: 28px; position: relative; }
+  .panel.dark { background: var(--forestD); color: var(--darkAccent); border-color: rgba(0,0,0,0.2); }
+  .panel.ink { background: var(--ink); color: var(--paper); border-color: rgba(0,0,0,0.25); }
+  .panel-label { position: absolute; bottom: 10px; left: 14px; font-family: ui-monospace, Menlo, monospace; font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--ink3); }
+  .panel.dark .panel-label, .panel.ink .panel-label { color: rgba(237,239,230,0.4); }
+
+  /* ── Mark anatomy ─────────────────────────────────────── */
+  .anatomy { display: grid; grid-template-columns: 1.1fr 1fr; gap: 14px; align-items: stretch; }
+  .icon-hero { display: flex; align-items: center; justify-content: center; min-height: 360px; }
+  .icon-hero img { width: 240px; height: 240px; border-radius: 52px; box-shadow: 0 30px 60px -22px rgba(0,0,0,0.4), 0 0 0 0.5px rgba(0,0,0,0.18); }
+  .spec-list { padding: 0; margin: 0; list-style: none; }
+  .spec-list li { display: grid; grid-template-columns: 96px 1fr; gap: 12px; padding: 9px 0; border-bottom: 0.5px solid var(--rule); font-size: 12px; }
+  .spec-list li:last-child { border-bottom: none; }
+  .spec-list li .k { color: var(--ink3); font-family: ui-monospace, Menlo, monospace; font-size: 10px; letter-spacing: 1.2px; text-transform: uppercase; }
+  .spec-list li .v { color: var(--ink); }
+  .spec-list li .v .mono { color: var(--ink2); }
+
+  /* ── Size ladder ──────────────────────────────────────── */
+  .ladder { display: flex; align-items: end; gap: 22px; justify-content: center; flex-wrap: wrap; padding: 16px 12px; min-height: 200px; }
+  .ladder figure { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .ladder figcaption { font-family: ui-monospace, Menlo, monospace; font-size: 9px; letter-spacing: 1.5px; color: var(--ink3); }
+  .ladder img { display: block; image-rendering: -webkit-optimize-contrast; }
+  .ladder .b16 { width: 16px; height: 16px; border-radius: 4px; }
+  .ladder .b24 { width: 24px; height: 24px; border-radius: 5px; }
+  .ladder .b32 { width: 32px; height: 32px; border-radius: 7px; }
+  .ladder .b48 { width: 48px; height: 48px; border-radius: 10px; }
+  .ladder .b64 { width: 64px; height: 64px; border-radius: 14px; }
+  .ladder .b128 { width: 128px; height: 128px; border-radius: 28px; }
+
+  /* ── Variants ─────────────────────────────────────────── */
+  .variants { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  .variant { padding: 28px 18px 24px; border-radius: 10px; display: flex; flex-direction: column; align-items: center; gap: 12px; border: 0.5px solid var(--rule); position: relative; }
+  .variant img { width: 96px; height: 96px; border-radius: 22px; }
+  .variant .name { font-family: ui-monospace, Menlo, monospace; font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--ink3); }
+  .variant.paper { background: var(--paper); }
+  .variant.dark { background: var(--forestD); border-color: rgba(0,0,0,0.2); }
+  .variant.warm { background: var(--warmS); border-color: var(--warm); }
+  .variant.dark .name { color: var(--darkAccent); }
+  .variant.outline-bg { background: var(--paper2); }
+
+  /* ── macOS Dock ───────────────────────────────────────── */
+  .dock-stage { background: linear-gradient(180deg, #6a7e75 0%, #3f5347 100%); border-radius: 14px; height: 280px; display: flex; align-items: flex-end; justify-content: center; padding: 0 0 24px; overflow: hidden; }
+  .dock {
+    display: flex; align-items: end; gap: 6px;
+    background: rgba(255,255,255,0.18);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 0.5px solid rgba(255,255,255,0.35);
+    border-radius: 22px;
+    padding: 10px 14px;
+    box-shadow: 0 12px 30px -10px rgba(0,0,0,0.4);
+  }
+  .dock-item { width: 56px; height: 56px; border-radius: 13px; flex-shrink: 0; box-shadow: 0 6px 12px -4px rgba(0,0,0,0.3); }
+  .dock-item.placeholder { background: linear-gradient(135deg, var(--paper2), var(--bg)); border: 0.5px solid rgba(0,0,0,0.1); }
+  .dock-item.a { background: linear-gradient(135deg, #0a84ff, #5856d6); }
+  .dock-item.b { background: linear-gradient(135deg, #ff6b6b, #ff9f43); }
+  .dock-item.c { background: linear-gradient(135deg, #58D7B7, #2DA28C); }
+  .dock-item.d { background: linear-gradient(135deg, #d8c7a3, #a08766); }
+  .dock-item.athenaeum { width: 68px; height: 68px; border-radius: 16px; transform: translateY(-10px); position: relative; }
+  .dock-item.athenaeum img { width: 100%; height: 100%; border-radius: inherit; display: block; }
+  .dock-item.athenaeum::after {
+    content: ""; position: absolute; bottom: -14px; left: 50%; transform: translateX(-50%);
+    width: 4px; height: 4px; border-radius: 999px; background: rgba(255,255,255,0.9);
+  }
+  .dock-divider { width: 0.5px; height: 40px; background: rgba(255,255,255,0.3); margin: 0 4px; align-self: center; }
+
+  /* ── Finder list ──────────────────────────────────────── */
+  .finder { background: var(--paper); border-radius: 10px; border: 0.5px solid var(--rule); overflow: hidden; box-shadow: 0 6px 18px -10px rgba(0,0,0,0.2); }
+  .finder-bar { display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: var(--paper2); border-bottom: 0.5px solid var(--rule); }
+  .finder-bar .lights { display: flex; gap: 6px; }
+  .finder-bar .lights span { width: 11px; height: 11px; border-radius: 999px; display: inline-block; }
+  .finder-bar .lights .r { background: #FF5F57; }
+  .finder-bar .lights .y { background: #FEBC2E; }
+  .finder-bar .lights .g { background: #28C840; }
+  .finder-bar .crumb { font-size: 11px; color: var(--ink2); font-family: -apple-system, "SF Pro Text", sans-serif; }
+  .finder-row { display: grid; grid-template-columns: 36px 1fr 100px 90px; gap: 12px; align-items: center; padding: 8px 14px; border-bottom: 0.5px solid var(--rule); font-size: 12px; }
+  .finder-row.hd { font-size: 9.5px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--ink3); padding: 6px 14px; background: var(--paper2); }
+  .finder-row:last-child { border-bottom: none; }
+  .finder-row.sel { background: rgba(62,92,74,0.10); }
+  .finder-row.sel .name { color: var(--ink); font-weight: 500; }
+  .finder-row img { width: 22px; height: 22px; border-radius: 5px; }
+  .finder-row .doc-icon { width: 22px; height: 22px; background: var(--paper2); border: 0.5px solid var(--rule); border-radius: 3px; display: inline-block; }
+  .finder-row .name { color: var(--ink2); }
+  .finder-row .meta { color: var(--ink3); font-family: ui-monospace, Menlo, monospace; font-size: 10px; }
+
+  /* ── Browser tab ──────────────────────────────────────── */
+  .browser { background: var(--paper); border-radius: 10px; border: 0.5px solid var(--rule); overflow: hidden; box-shadow: 0 6px 18px -10px rgba(0,0,0,0.2); }
+  .tabbar { background: #d6d0c2; padding: 8px 12px 0; display: flex; gap: 6px; }
+  .tab { display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 9px 9px 0 0; font-size: 11.5px; color: var(--ink2); background: rgba(255,255,255,0.5); max-width: 220px; }
+  .tab.active { background: var(--paper); color: var(--ink); font-weight: 500; }
+  .tab img { width: 14px; height: 14px; border-radius: 3px; flex-shrink: 0; }
+  .tab .close { color: var(--ink3); font-size: 12px; margin-left: 6px; }
+  .urlbar { display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: var(--paper); border-bottom: 0.5px solid var(--rule); }
+  .urlbar .pill { flex: 1; display: flex; align-items: center; gap: 8px; background: var(--paper2); border: 0.5px solid var(--rule); border-radius: 6px; padding: 6px 10px; font-size: 11.5px; color: var(--ink2); font-family: ui-monospace, Menlo, monospace; }
+  .urlbar .pill .lock { color: var(--forest); font-size: 10px; }
+
+  /* ── Splash ──────────────────────────────────────────── */
+  .splash { background: var(--ink); border-radius: 10px; padding: 56px 32px; display: flex; flex-direction: column; align-items: center; gap: 22px; min-height: 320px; justify-content: center; position: relative; overflow: hidden; }
+  .splash img { width: 88px; height: 88px; border-radius: 19px; box-shadow: 0 20px 40px -16px rgba(0,0,0,0.6); }
+  .splash .name { font-family: "Fraunces", Georgia, serif; font-weight: 300; font-size: 38px; color: var(--paper); letter-spacing: -0.5px; line-height: 1; }
+  .splash .sub { font-family: ui-monospace, Menlo, monospace; font-size: 10.5px; letter-spacing: 3px; text-transform: uppercase; color: var(--darkAccent); }
+  .splash .progress { width: 220px; height: 1.5px; background: rgba(237,239,230,0.12); border-radius: 999px; overflow: hidden; margin-top: 6px; }
+  .splash .progress .bar { width: 62%; height: 100%; background: var(--darkAccent); }
+  .splash .status { font-family: ui-monospace, Menlo, monospace; font-size: 10px; color: rgba(237,239,230,0.4); margin-top: 6px; }
+
+  /* ── In-app pull-outs ────────────────────────────────── */
+  .pullout { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .sidebar-card { background: var(--paper2); padding: 18px 14px; border-radius: 8px; border: 0.5px solid var(--rule); }
+  .sidebar-head { display: flex; align-items: center; gap: 10px; }
+  .sidebar-head img { width: 30px; height: 30px; border-radius: 6px; }
+  .sidebar-head .word { font-family: "Fraunces", Georgia, serif; font-size: 13px; font-weight: 500; color: var(--ink); letter-spacing: 0.2px; line-height: 1; }
+  .sidebar-head .sub { font-size: 10px; color: var(--ink3); margin-top: 3px; }
+
+  .chat-bubble { display: flex; gap: 10px; align-items: flex-start; }
+  .chat-avatar { width: 28px; height: 28px; border-radius: 999px; background: var(--forestS); border: 0.5px solid rgba(62,92,74,0.25); display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-family: "Fraunces", Georgia, serif; font-style: italic; font-weight: 300; font-size: 18px; color: var(--forest); line-height: 1; }
+  .chat-bubble .bubble { background: var(--paper); border: 0.5px solid var(--rule); border-radius: 14px 14px 14px 4px; padding: 12px 14px; font-size: 12.5px; color: var(--ink); line-height: 1.55; max-width: 90%; }
+  .chat-meta { font-size: 10.5px; color: var(--ink3); margin-bottom: 6px; }
+
+  /* ── About dialog ─────────────────────────────────────── */
+  .about-stage { background: linear-gradient(180deg, #c9bea7 0%, #a89878 100%); border-radius: 14px; padding: 36px; display: flex; align-items: center; justify-content: center; min-height: 360px; }
+  .about {
+    width: 340px; background: var(--paper); border-radius: 10px;
+    box-shadow: 0 30px 50px -16px rgba(0,0,0,0.45), 0 0 0 0.5px rgba(0,0,0,0.18);
+    padding: 28px 28px 22px; text-align: center;
+  }
+  .about img { width: 88px; height: 88px; border-radius: 19px; box-shadow: 0 8px 16px -8px rgba(0,0,0,0.25); }
+  .about .name { font-family: "Fraunces", Georgia, serif; font-weight: 400; font-size: 22px; color: var(--ink); margin-top: 14px; letter-spacing: 0.1px; }
+  .about .ver { font-size: 11px; color: var(--ink2); margin-top: 2px; }
+  .about .tag { display: inline-block; margin: 12px auto 0; font-family: ui-monospace, Menlo, monospace; font-size: 10px; color: var(--ink3); letter-spacing: 2px; text-transform: uppercase; }
+  .about hr { border: none; border-top: 0.5px solid var(--rule); margin: 18px 0; }
+  .about .meta { font-size: 11px; color: var(--ink2); display: flex; justify-content: space-between; }
+  .about .copy { font-size: 10px; color: var(--ink3); margin-top: 14px; line-height: 1.5; }
+
+  /* ── Footer wordmark ──────────────────────────────────── */
+  .footer-strip { display: grid; grid-template-columns: auto 1fr auto; gap: 24px; align-items: center; padding: 24px 28px; background: var(--paper); border-radius: 10px; border: 0.5px solid var(--rule); }
+  .footer-strip img { width: 40px; height: 40px; border-radius: 9px; }
+  .footer-strip .word { font-family: "Fraunces", Georgia, serif; font-size: 17px; font-weight: 400; color: var(--ink); letter-spacing: 0.1px; }
+  .footer-strip .word small { display: block; font-family: ui-monospace, Menlo, monospace; font-size: 9px; letter-spacing: 2px; text-transform: uppercase; color: var(--ink3); margin-top: 3px; font-weight: normal; }
+  .footer-strip .links { display: flex; gap: 18px; font-size: 11.5px; color: var(--ink2); }
+  .footer-strip .links a { color: var(--ink2); text-decoration: none; }
+
+  /* ── Index ────────────────────────────────────────────── */
+  .index { font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; }
+  .index .row { display: grid; grid-template-columns: 320px 90px 1fr; gap: 14px; padding: 8px 0; border-bottom: 0.5px solid var(--rule); align-items: center; }
+  .index .row:last-child { border-bottom: none; }
+  .index .row .path { color: var(--ink); }
+  .index .row .kind { color: var(--forest); font-size: 9.5px; letter-spacing: 1.5px; text-transform: uppercase; }
+  .index .row .note { color: var(--ink3); font-size: 11px; }
+  .index .group { font-size: 9.5px; letter-spacing: 2px; text-transform: uppercase; color: var(--ink3); margin: 14px 0 4px; }
+  .index .group:first-child { margin-top: 0; }
+
+  /* ── Clear-space and minimum size ─────────────────────── */
+  .clearspace { display: flex; gap: 24px; align-items: center; justify-content: center; min-height: 220px; }
+  .cs-frame { position: relative; padding: 32px; border: 0.5px dashed var(--ruleS); }
+  .cs-frame img { width: 96px; height: 96px; border-radius: 21px; display: block; }
+  .cs-tick { position: absolute; font-family: ui-monospace, Menlo, monospace; font-size: 9px; letter-spacing: 1px; color: var(--warm); }
+  .cs-tick.t { top: 8px; left: 50%; transform: translateX(-50%); }
+  .cs-tick.b { bottom: 8px; left: 50%; transform: translateX(-50%); }
+  .cs-tick.l { left: 8px; top: 50%; transform: translateY(-50%); }
+  .cs-tick.r { right: 8px; top: 50%; transform: translateY(-50%); }
+  .cs-note { color: var(--ink2); font-size: 12px; max-width: 280px; }
+  .cs-note b { font-family: "Fraunces", Georgia, serif; font-weight: 400; font-size: 15px; color: var(--ink); display: block; margin-bottom: 4px; }
+
+  /* ── Misuse ──────────────────────────────────────────── */
+  .misuse { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  .dont { background: var(--paper); padding: 22px; border-radius: 10px; border: 0.5px solid var(--rule); display: flex; flex-direction: column; align-items: center; gap: 10px; position: relative; }
+  .dont .x { position: absolute; top: 10px; right: 10px; width: 18px; height: 18px; border-radius: 999px; background: #B94A4A; color: white; font-size: 11px; display: flex; align-items: center; justify-content: center; }
+  .dont .why { font-size: 11px; color: var(--ink3); text-align: center; line-height: 1.4; }
+  .dont img { width: 72px; height: 72px; border-radius: 16px; }
+  .dont .stretch img { width: 100px; height: 56px; border-radius: 12px; object-fit: fill; }
+  .dont .tinted img { filter: hue-rotate(120deg) saturate(2); }
+  .dont .rotated img { transform: rotate(15deg); }
+  .dont .gradient img { filter: drop-shadow(0 0 12px rgba(255,100,0,0.5)); }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- Masthead -->
+  <header style="display: grid; grid-template-columns: 1fr auto; gap: 24px; align-items: end; padding-bottom: 28px; border-bottom: 0.5px solid var(--ruleS); margin-bottom: 8px;">
+    <div>
+      <div class="eyebrow">Athenaeum &nbsp;·&nbsp; <span class="a">Brand kit, v1</span> &nbsp;·&nbsp; mark + applications</div>
+      <h1 class="h1">The Æ ligature, made primary.</h1>
+      <div class="lede">The lowercase chip in the sidebar grows up. Same idea — Fraunces italic at low weight, set in a softly-rounded ink square — now produced at every size and pushed through every surface where the app meets the world.</div>
+    </div>
+    <div class="mono" style="font-size: 10px; color: var(--ink3); text-align: right; line-height: 1.7;">
+      <b style="color: var(--ink); font-weight: 500;">15 raster assets</b><br>
+      <b style="color: var(--ink); font-weight: 500;">3 vector files</b><br>
+      <b style="color: var(--ink); font-weight: 500;">1 react component</b><br>
+      <b style="color: var(--ink); font-weight: 500;">2 wiring patches</b>
+    </div>
+  </header>
+
+  <!-- ── i. Anatomy ─────────────────────────────────────── -->
+  <section class="section">
+    <div class="section-head">
+      <div class="roman">i.</div>
+      <div>
+        <h2 class="h2">Anatomy</h2>
+        <div class="section-desc">The mark is the uppercase ligature <em>Æ</em> set in Fraunces italic, light. It sits in a 22%-radius rounded square — close to a macOS app icon mask, but with our own corner curvature.</div>
+      </div>
+      <span class="tag">primary mark</span>
+    </div>
+    <div class="anatomy">
+      <div class="panel">
+        <div class="icon-hero">
+          <img src="brand/app-icon-256.png" alt="Athenaeum app icon">
+        </div>
+        <div class="panel-label">app-icon-256.png · enlarged</div>
+      </div>
+      <div class="panel" style="display: flex; align-items: center;">
+        <ul class="spec-list" style="width: 100%;">
+          <li><span class="k">glyph</span><span class="v">Æ &nbsp;<span class="mono">U+00C6</span></span></li>
+          <li><span class="k">family</span><span class="v">Fraunces<span class="mono"> · opsz fluid</span></span></li>
+          <li><span class="k">weight</span><span class="v">300 &nbsp;<span class="mono">(400 below 32 px)</span></span></li>
+          <li><span class="k">style</span><span class="v">italic</span></li>
+          <li><span class="k">cap-ratio</span><span class="v"><span class="mono">~0.66 × tile</span></span></li>
+          <li><span class="k">field</span><span class="v">ink <span class="mono">#211F1B</span></span></li>
+          <li><span class="k">glyph</span><span class="v">paper <span class="mono">#FBFAF7</span></span></li>
+          <li><span class="k">radius</span><span class="v"><span class="mono">22% of tile</span> &nbsp;<span style="color: var(--ink3);">(macOS-adjacent)</span></span></li>
+          <li><span class="k">centering</span><span class="v">optical, italic-corrected <span class="mono">(+0.5%, -1.5%)</span></span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── ii. Size ladder ────────────────────────────────── -->
+  <section class="section">
+    <div class="section-head">
+      <div class="roman">ii.</div>
+      <div>
+        <h2 class="h2">Size ladder</h2>
+        <div class="section-desc">The mark is rasterised at every size it'll ever need. Below 32 px the weight ticks up to 400 so the cross-bar doesn't break.</div>
+      </div>
+      <span class="tag">9 sizes &nbsp;·&nbsp; 16 → 1024 px</span>
+    </div>
+    <div class="panel">
+      <div class="ladder">
+        <figure><img class="b16"  src="brand/app-icon-16.png"  alt="16"><figcaption>16</figcaption></figure>
+        <figure><img class="b24"  src="brand/app-icon-24.png"  alt="24"><figcaption>24</figcaption></figure>
+        <figure><img class="b32"  src="brand/app-icon-32.png"  alt="32"><figcaption>32</figcaption></figure>
+        <figure><img class="b48"  src="brand/app-icon-48.png"  alt="48"><figcaption>48</figcaption></figure>
+        <figure><img class="b64"  src="brand/app-icon-64.png"  alt="64"><figcaption>64</figcaption></figure>
+        <figure><img class="b128" src="brand/app-icon-128.png" alt="128"><figcaption>128</figcaption></figure>
+      </div>
+      <div class="panel-label">favicons · toolbar icons · finder tiles</div>
+    </div>
+  </section>
+
+  <!-- ── iii. Variants ──────────────────────────────────── -->
+  <section class="section">
+    <div class="section-head">
+      <div class="roman">iii.</div>
+      <div>
+        <h2 class="h2">Variants</h2>
+        <div class="section-desc">Four tonal versions. <em>Ink</em> is canonical. <em>Forest</em> is for the dark inspector and the chat assistant context. <em>Inverse</em> goes on the ink, for printed exports. <em>Outline</em> for hairline UI moments.</div>
+      </div>
+      <span class="tag">4 tonal versions</span>
+    </div>
+    <div class="variants">
+      <div class="variant paper">
+        <img src="brand/app-icon-128.png" alt="Ink">
+        <div class="name">Ink &nbsp;·&nbsp; primary</div>
+      </div>
+      <div class="variant dark">
+        <img src="brand/app-icon-128-forest.png" alt="Forest">
+        <div class="name">Forest &nbsp;·&nbsp; assistant</div>
+      </div>
+      <div class="variant outline-bg">
+        <img src="brand/app-icon-128-inverse.png" alt="Inverse">
+        <div class="name">Inverse &nbsp;·&nbsp; print</div>
+      </div>
+      <div class="variant paper">
+        <div style="width: 96px; height: 96px; border-radius: 22px; border: 0.5px solid var(--ink); display: flex; align-items: center; justify-content: center;">
+          <span style="font-family: 'Fraunces', Georgia, serif; font-style: italic; font-weight: 300; font-size: 64px; color: var(--ink); line-height: 1; transform: translate(1px, -2px);">Æ</span>
+        </div>
+        <div class="name">Outline &nbsp;·&nbsp; hairline</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── iv. macOS Dock ─────────────────────────────────── -->
+  <section class="section">
+    <div class="section-head">
+      <div class="roman">iv.</div>
+      <div>
+        <h2 class="h2">In the Dock</h2>
+        <div class="section-desc">Sat next to a few real-feeling neighbours — Athenaeum holds its own. The dark field is deliberate. Everyone else is gradient candy; the archive looks like a closed book.</div>
+      </div>
+      <span class="tag">macOS dock · running</span>
+    </div>
+    <div class="dock-stage">
+      <div class="dock">
+        <div class="dock-item placeholder"></div>
+        <div class="dock-item a"></div>
+        <div class="dock-item b"></div>
+        <div class="dock-item c"></div>
+        <div class="dock-divider"></div>
+        <div class="dock-item athenaeum"><img src="brand/app-icon-256.png" alt="Athenaeum"></div>
+        <div class="dock-divider"></div>
+        <div class="dock-item d"></div>
+        <div class="dock-item placeholder"></div>
+        <div class="dock-item placeholder"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── v. Finder ──────────────────────────────────────── -->
+  <section class="section">
+    <div class="section-head">
+      <div class="roman">v.</div>
+      <div>
+        <h2 class="h2">In Finder &amp; the Applications folder</h2>
+        <div class="section-desc">A list view, where the icon shrinks to 22 px and has to be recognisable next to neighbours.</div>
+      </div>
+      <span class="tag">finder · list</span>
+    </div>
+    <div class="finder">
+      <div class="finder-bar">
+        <div class="lights"><span class="r"></span><span class="y"></span><span class="g"></span></div>
+        <div class="crumb">Applications</div>
+      </div>
+      <div class="finder-row hd">
+        <span></span><span>name</span><span>kind</span><span>size</span>
+      </div>
+      <div class="finder-row">
+        <span class="doc-icon"></span><span class="name">App Store</span><span class="meta">application</span><span class="meta">31.4 MB</span>
+      </div>
+      <div class="finder-row sel">
+        <img src="brand/app-icon-48.png" alt=""><span class="name">Athenaeum</span><span class="meta">application</span><span class="meta">214 MB</span>
+      </div>
+      <div class="finder-row">
+        <span class="doc-icon"></span><span class="name">Calendar</span><span class="meta">application</span><span class="meta">28.1 MB</span>
+      </div>
+      <div class="finder-row">
+        <span class="doc-icon"></span><span class="name">Notes</span><span class="meta">application</span><span class="meta">14.9 MB</span>
+      </div>
+      <div class="finder-row">
+        <span class="doc-icon"></span><span class="name">Preview</span><span class="meta">application</span><span class="meta">62.3 MB</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── vi. Browser tab ────────────────────────────────── -->
+  <section class="section">
+    <div class="section-head">
+      <div class="roman">vi.</div>
+      <div>
+        <h2 class="h2">In the browser</h2>
+        <div class="section-desc">An SVG favicon (with PNG fallbacks at 16 / 32). The Æ stays legible at favicon size because the cross-bar is the dominant feature.</div>
+      </div>
+      <span class="tag">favicon · tab</span>
+    </div>
+    <div class="browser">
+      <div class="tabbar">
+        <div class="tab"><div style="width:14px;height:14px;background:linear-gradient(135deg,#0a84ff,#5856d6);border-radius:3px;"></div>Mail<span class="close">×</span></div>
+        <div class="tab active"><img src="brand/app-icon-32.png" alt="">Athenaeum<span class="close">×</span></div>
+        <div class="tab"><div style="width:14px;height:14px;background:linear-gradient(135deg,#ff6b6b,#ff9f43);border-radius:3px;"></div>Linear<span class="close">×</span></div>
+        <div class="tab"><div style="width:14px;height:14px;background:linear-gradient(135deg,#58D7B7,#2DA28C);border-radius:3px;"></div>Calendar<span class="close">×</span></div>
+      </div>
+      <div class="urlbar">
+        <span style="color:var(--ink3); font-family:ui-monospace,Menlo,monospace; font-size: 11px;">‹ ›</span>
+        <div class="pill"><span class="lock">⎕</span>localhost &nbsp;·&nbsp; athenaeum / library</div>
+      </div>
+      <div style="padding: 18px 14px; font-size: 11px; color: var(--ink3); font-family: ui-monospace, Menlo, monospace; letter-spacing: 1px;">↳ page content here</div>
+    </div>
+  </section>
+
+  <!-- ── vii. Splash / launch ───────────────────────────── -->
+  <section class="section">
+    <div class="section-head">
+      <div class="roman">vii.</div>
+      <div>
+        <h2 class="h2">Launch screen</h2>
+        <div class="section-desc">A quiet first impression when the user opens the app and the local model spins up. Notice the wordmark inherits Fraunces from the same family the type stack already loads.</div>
+      </div>
+      <span class="tag">app launch · 1280 × 800</span>
+    </div>
+    <div class="splash">
+      <img src="brand/app-icon-256.png" alt="Athenaeum">
+      <div class="name">Athenaeum</div>
+      <div class="sub">private archive &nbsp;·&nbsp; v1.0</div>
+      <div class="progress"><div class="bar"></div></div>
+      <div class="status">starting local model · llama-3.2-3B</div>
+    </div>
+  </section>
+
+  <!-- ── viii. In-app pull-outs ─────────────────────────── -->
+  <section class="section">
+    <div class="section-head">
+      <div class="roman">viii.</div>
+      <div>
+        <h2 class="h2">In the app</h2>
+        <div class="section-desc">The mark already lives in two spots in the prototype. Both are updated to the new asset — the sidebar header chip and the assistant's bubble avatar.</div>
+      </div>
+      <span class="tag">live in Stillwater Demo</span>
+    </div>
+    <div class="pullout">
+      <div class="panel" style="padding: 18px;">
+        <div class="sidebar-card">
+          <div class="sidebar-head">
+            <img src="brand/app-icon-128.png" alt="Athenaeum">
+            <div>
+              <div class="word">Athenaeum</div>
+              <div class="sub">Private archive</div>
+            </div>
+          </div>
+          <div style="height: 0.5px; background: var(--rule); margin: 14px -14px 12px;"></div>
+          <div style="font-size: 9px; letter-spacing: 2px; text-transform: uppercase; color: var(--ink3); padding: 6px 4px;">Library</div>
+          <div style="display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 6px; background: var(--paper); border: 0.5px solid var(--rule); font-size: 12.5px; color: var(--ink); font-weight: 500;">
+            <span style="width: 14px; text-align: center; color: var(--ink3); font-size: 11px;">◫</span>
+            <span style="flex: 1;">All Documents</span>
+            <span style="font-size: 10px; color: var(--ink3); font-family: ui-monospace, Menlo, monospace; background: var(--paper2); padding: 1px 6px; border-radius: 999px;">1,284</span>
+          </div>
+        </div>
+        <div class="panel-label">sidebar header · 30 px chip</div>
+      </div>
+      <div class="panel" style="padding: 22px 18px;">
+        <div class="chat-bubble">
+          <div class="chat-avatar">Æ</div>
+          <div>
+            <div class="chat-meta">Athenaeum · 3 sources</div>
+            <div class="bubble">The Wilshire lease runs through <b>March 2027</b>, with a single five-year option at then-market rent <span style="background: var(--forestS); padding: 1px 5px; border-radius: 999px; font-size: 10px; color: var(--forest); font-family: ui-monospace, Menlo, monospace;">[1]</span>. Quiet hours are <em>10 pm – 7 am</em> <span style="background: var(--forestS); padding: 1px 5px; border-radius: 999px; font-size: 10px; color: var(--forest); font-family: ui-monospace, Menlo, monospace;">[2]</span>.</div>
+          </div>
+        </div>
+        <div class="panel-label">chat avatar · forest variant · 26 px</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── ix. About dialog ───────────────────────────────── -->
+  <section class="section">
+    <div class="section-head">
+      <div class="roman">ix.</div>
+      <div>
+        <h2 class="h2">About dialog</h2>
+        <div class="section-desc">The classic macOS &ldquo;About this app&rdquo; treatment — the icon centred, the wordmark below it in Fraunces, version and meta lines in the type system you already use.</div>
+      </div>
+      <span class="tag">menu · about athenaeum</span>
+    </div>
+    <div class="about-stage">
+      <div class="about">
+        <img src="brand/app-icon-256.png" alt="Athenaeum">
+        <div class="name">Athenaeum</div>
+        <div class="ver">Version 1.0 &nbsp;<span style="color: var(--ink3);">(build 2025.09.342)</span></div>
+        <div class="tag">private &nbsp;·&nbsp; local-only</div>
+        <hr>
+        <div class="meta">
+          <span style="color: var(--ink3);">model</span>
+          <span class="mono">llama-3.2-3B · q4</span>
+        </div>
+        <div class="meta" style="margin-top: 6px;">
+          <span style="color: var(--ink3);">index</span>
+          <span class="mono">1,284 docs · 61,402 chunks</span>
+        </div>
+        <div class="copy">A quiet, indexed corner of your life.<br>Everything stays on this Mac.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── x. Clear-space & misuse ────────────────────────── -->
+  <section class="section">
+    <div class="section-head">
+      <div class="roman">x.</div>
+      <div>
+        <h2 class="h2">Clear-space &amp; misuse</h2>
+        <div class="section-desc">Give the mark room — at least a quarter-tile of breathing space on every side. It's a literary mark, not a logo; treat it like a colophon.</div>
+      </div>
+      <span class="tag">guidelines</span>
+    </div>
+
+    <div class="grid" style="grid-template-columns: 1.2fr 1fr; align-items: stretch;">
+      <div class="panel">
+        <div class="clearspace">
+          <div class="cs-frame">
+            <span class="cs-tick t">¼Æ</span>
+            <span class="cs-tick b">¼Æ</span>
+            <span class="cs-tick l">¼Æ</span>
+            <span class="cs-tick r">¼Æ</span>
+            <img src="brand/app-icon-256.png" alt="">
+          </div>
+          <div class="cs-note">
+            <b>Clear-space</b>
+            A margin equal to a quarter of the tile width on every side. Don't crowd it; if there's no room, take it off.
+          </div>
+        </div>
+        <div class="panel-label">clear-space · ¼ tile</div>
+      </div>
+
+      <div class="panel">
+        <div class="clearspace" style="flex-direction: column; gap: 16px; min-height: 220px;">
+          <div style="display: flex; align-items: center; gap: 22px;">
+            <img src="brand/app-icon-16.png" alt="">
+            <img src="brand/app-icon-24.png" alt="">
+            <img src="brand/app-icon-32.png" alt="">
+          </div>
+          <div class="cs-note" style="text-align: center;">
+            <b>Minimum size</b>
+            16 px on screen. Below that, fall back to the wordmark only.
+          </div>
+        </div>
+        <div class="panel-label">minimum · 16 px</div>
+      </div>
+    </div>
+
+    <div class="misuse" style="margin-top: 14px;">
+      <div class="dont">
+        <span class="x">×</span>
+        <div class="stretch"><img src="brand/app-icon-256.png" alt=""></div>
+        <div class="why">Don't stretch or squash</div>
+      </div>
+      <div class="dont">
+        <span class="x">×</span>
+        <div class="tinted"><img src="brand/app-icon-256.png" alt=""></div>
+        <div class="why">Don't tint or recolour</div>
+      </div>
+      <div class="dont">
+        <span class="x">×</span>
+        <div class="rotated"><img src="brand/app-icon-256.png" alt=""></div>
+        <div class="why">Don't rotate</div>
+      </div>
+      <div class="dont">
+        <span class="x">×</span>
+        <div class="gradient"><img src="brand/app-icon-256.png" alt=""></div>
+        <div class="why">Don't add glow / shadow / outline</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── xi. Footer strip ───────────────────────────────── -->
+  <section class="section">
+    <div class="section-head">
+      <div class="roman">xi.</div>
+      <div>
+        <h2 class="h2">Email &amp; web footer</h2>
+        <div class="section-desc">For colophons, email signatures, and the footer of any printed export. Wordmark in Fraunces 400, monospace eyebrow, the mark sized to match the x-height.</div>
+      </div>
+      <span class="tag">marketing · email · print</span>
+    </div>
+    <div class="footer-strip">
+      <img src="brand/app-icon-128.png" alt="Athenaeum">
+      <div class="word">Athenaeum<small>a private archive &nbsp;·&nbsp; est. 2025</small></div>
+      <div class="links">
+        <a href="#">Docs</a>
+        <a href="#">Changelog</a>
+        <a href="#">Privacy</a>
+        <a href="#">Hello</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── xii. Asset index ───────────────────────────────── -->
+  <section class="section">
+    <div class="section-head">
+      <div class="roman">xii.</div>
+      <div>
+        <h2 class="h2">Asset index</h2>
+        <div class="section-desc">Everything generated for this kit lives under <span class="mono">brand/</span>. The Stillwater Demo already references the favicon and the React mark; the rest is yours to drop into marketing, README, app store listings, etc.</div>
+      </div>
+      <span class="tag">files · 18 total</span>
+    </div>
+
+    <div class="panel">
+      <div class="index">
+        <div class="group">React component &nbsp;·&nbsp; in-app source of truth</div>
+        <div class="row"><span class="path">brand/athenaeum-mark.jsx</span><span class="kind">react</span><span class="note">&lt;AthenaeumMark&gt;, &lt;AthenaeumWordmark&gt;, &lt;AthenaeumLockup&gt;</span></div>
+
+        <div class="group">SVG masters &nbsp;·&nbsp; vector</div>
+        <div class="row"><span class="path">brand/app-icon.svg</span><span class="kind">svg · 1024</span><span class="note">primary mark master · ink field</span></div>
+        <div class="row"><span class="path">brand/favicon.svg</span><span class="kind">svg · 64</span><span class="note">browser tab · weight-bumped for legibility</span></div>
+        <div class="row"><span class="path">brand/wordmark.svg</span><span class="kind">svg</span><span class="note">wordmark only, with eyebrow</span></div>
+
+        <div class="group">PNG raster &nbsp;·&nbsp; ink (primary)</div>
+        <div class="row"><span class="path">brand/app-icon-16.png</span><span class="kind">png · 16</span><span class="note">favicon · 16 × 16</span></div>
+        <div class="row"><span class="path">brand/app-icon-24.png</span><span class="kind">png · 24</span><span class="note">toolbar</span></div>
+        <div class="row"><span class="path">brand/app-icon-32.png</span><span class="kind">png · 32</span><span class="note">favicon · 32 × 32</span></div>
+        <div class="row"><span class="path">brand/app-icon-48.png</span><span class="kind">png · 48</span><span class="note">finder list</span></div>
+        <div class="row"><span class="path">brand/app-icon-64.png</span><span class="kind">png · 64</span><span class="note">finder grid · small</span></div>
+        <div class="row"><span class="path">brand/app-icon-128.png</span><span class="kind">png · 128</span><span class="note">finder grid · large · App Store sm</span></div>
+        <div class="row"><span class="path">brand/app-icon-256.png</span><span class="kind">png · 256</span><span class="note">dock @2x · apple-touch-icon</span></div>
+        <div class="row"><span class="path">brand/app-icon-512.png</span><span class="kind">png · 512</span><span class="note">app store · marketing</span></div>
+        <div class="row"><span class="path">brand/app-icon-1024.png</span><span class="kind">png · 1024</span><span class="note">app store master · icns source</span></div>
+
+        <div class="group">PNG raster &nbsp;·&nbsp; forest variant</div>
+        <div class="row"><span class="path">brand/app-icon-128-forest.png</span><span class="kind">png · 128</span><span class="note">assistant context</span></div>
+        <div class="row"><span class="path">brand/app-icon-256-forest.png</span><span class="kind">png · 256</span><span class="note">assistant context</span></div>
+        <div class="row"><span class="path">brand/app-icon-512-forest.png</span><span class="kind">png · 512</span><span class="note">assistant context</span></div>
+
+        <div class="group">PNG raster &nbsp;·&nbsp; inverse variant</div>
+        <div class="row"><span class="path">brand/app-icon-128-inverse.png</span><span class="kind">png · 128</span><span class="note">printed exports, light backgrounds</span></div>
+        <div class="row"><span class="path">brand/app-icon-256-inverse.png</span><span class="kind">png · 256</span><span class="note">printed exports</span></div>
+        <div class="row"><span class="path">brand/app-icon-512-inverse.png</span><span class="kind">png · 512</span><span class="note">printed exports</span></div>
+
+        <div class="group">Patched in this commit</div>
+        <div class="row"><span class="path">Stillwater Demo.html</span><span class="kind">html</span><span class="note">favicon links + mark script load</span></div>
+        <div class="row"><span class="path">mockups/stillwater-demo-app.jsx</span><span class="kind">jsx</span><span class="note">sidebar header → &lt;AthenaeumMark&gt;</span></div>
+        <div class="row"><span class="path">mockups/stillwater-demo-chat.jsx</span><span class="kind">jsx</span><span class="note">assistant avatar → Fraunces Æ</span></div>
+      </div>
+    </div>
+  </section>
+
+  <div style="display: flex; justify-content: space-between; align-items: baseline; padding-top: 22px; border-top: 0.5px solid var(--ruleS); margin-top: 14px;">
+    <span style="font-size: 11.5px; color: var(--ink3);">Everything is system-typeset. To revise weight, glyph, or colour, edit <span class="mono">brand/athenaeum-mark.jsx</span> and re-run the rasteriser.</span>
+    <span class="mono" style="font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--ink3);">brand kit · v1 &nbsp;·&nbsp; ready</span>
+  </div>
+</div>
+</body>
+</html>

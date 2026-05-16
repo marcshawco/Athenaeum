@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/astral/Documents/[02] Development/Athenaeum/.claude/bump-build.sh",
+            "statusMessage": "Bumping build number...",
+            "async": true
+          }
+        ]
+      }
+    ]
+  }
+}
