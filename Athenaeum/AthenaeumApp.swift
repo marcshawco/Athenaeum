@@ -17,7 +17,7 @@ struct AthenaeumApp: App {
                 .preferredColorScheme(appearance.colorScheme)
                 .tint(Japandi.Colors.accentFallback)
         }
-        .modelContainer(for: [Document.self, Tag.self, ChatConversation.self])
+        .modelContainer(for: [Document.self, Tag.self, ChatConversation.self, KnowledgeEntry.self, Folder.self])
         .windowStyle(.titleBar)
         .windowToolbarStyle(.unified(showsTitle: false))
         .defaultSize(width: 1200, height: 800)
@@ -78,4 +78,7 @@ extension Notification.Name {
     static let selectDocumentByID = Notification.Name("selectDocumentByID")
     /// Posted by the inspector's close (✕) button.
     static let closeInspector = Notification.Name("closeInspector")
+    /// userInfo["documentIDs"] = [UUID] — kick off the AI-rename flow for
+    /// one or more documents. ContentView shows the review sheet.
+    static let aiRenameDocuments = Notification.Name("aiRenameDocuments")
 }

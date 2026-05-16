@@ -11,17 +11,25 @@ final class SearchService {
     var sortOrder: SortOrder = .newestFirst
 
     enum SortOrder: String, CaseIterable, Sendable {
-        case newestFirst = "Newest First"
-        case oldestFirst = "Oldest First"
-        case titleAZ     = "Title A-Z"
-        case titleZA     = "Title Z-A"
+        case newestFirst    = "Date Added · Newest"
+        case oldestFirst    = "Date Added · Oldest"
+        case docDateNewest  = "Document Date · Newest"
+        case docDateOldest  = "Document Date · Oldest"
+        case modifiedNewest = "Last Modified · Newest"
+        case modifiedOldest = "Last Modified · Oldest"
+        case titleAZ        = "Title A-Z"
+        case titleZA        = "Title Z-A"
 
         var sortDescriptor: SortDescriptor<Document> {
             switch self {
-            case .newestFirst: SortDescriptor(\.importedAt, order: .reverse)
-            case .oldestFirst: SortDescriptor(\.importedAt, order: .forward)
-            case .titleAZ:     SortDescriptor(\.title, order: .forward)
-            case .titleZA:     SortDescriptor(\.title, order: .reverse)
+            case .newestFirst:    SortDescriptor(\.importedAt,  order: .reverse)
+            case .oldestFirst:    SortDescriptor(\.importedAt,  order: .forward)
+            case .docDateNewest:  SortDescriptor(\.documentDate, order: .reverse)
+            case .docDateOldest:  SortDescriptor(\.documentDate, order: .forward)
+            case .modifiedNewest: SortDescriptor(\.modifiedAt,  order: .reverse)
+            case .modifiedOldest: SortDescriptor(\.modifiedAt,  order: .forward)
+            case .titleAZ:        SortDescriptor(\.title,       order: .forward)
+            case .titleZA:        SortDescriptor(\.title,       order: .reverse)
             }
         }
     }
@@ -59,10 +67,18 @@ final class SearchService {
 
         // Sort
         switch sortOrder {
-        case .newestFirst: results.sort { $0.importedAt > $1.importedAt }
-        case .oldestFirst: results.sort { $0.importedAt < $1.importedAt }
-        case .titleAZ:     results.sort { $0.title.localizedCompare($1.title) == .orderedAscending }
-        case .titleZA:     results.sort { $0.title.localizedCompare($1.title) == .orderedDescending }
+        case .newestFirst:    results.sort { $0.importedAt > $1.importedAt }
+        case .oldestFirst:    results.sort { $0.importedAt < $1.importedAt }
+        case .docDateNewest:
+            // Documents without a parsed date sink to the bottom of the
+            // sort so they don't dominate the "newest" view.
+            results.sort { ($0.documentDate ?? .distantPast) > ($1.documentDate ?? .distantPast) }
+        case .docDateOldest:
+            results.sort { ($0.documentDate ?? .distantFuture) < ($1.documentDate ?? .distantFuture) }
+        case .modifiedNewest: results.sort { $0.modifiedAt > $1.modifiedAt }
+        case .modifiedOldest: results.sort { $0.modifiedAt < $1.modifiedAt }
+        case .titleAZ:        results.sort { $0.title.localizedCompare($1.title) == .orderedAscending }
+        case .titleZA:        results.sort { $0.title.localizedCompare($1.title) == .orderedDescending }
         }
 
         return results
@@ -88,6 +104,10 @@ final class SearchService {
             }
         case .category(let slug):
             return documents.filter { $0.categorySlug == slug }
+        case .folder(let id):
+            return documents.filter { doc in
+                doc.folders?.contains(where: { $0.id == id }) == true
+            }
         case .chat, .models:
             return documents
         }

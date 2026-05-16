@@ -24,7 +24,7 @@ final class RAGService {
 
     // MARK: - Document Indexing
 
-    func indexDocument(id: UUID, text: String) async throws {
+    func indexDocument(id: UUID, text: String, title: String? = nil) async throws {
         isIndexing = true
         indexingProgress = 0
         defer { isIndexing = false }
@@ -40,7 +40,18 @@ final class RAGService {
 
         for (index, chunk) in chunks.enumerated() {
             indexingProgress = Double(index) / Double(chunks.count)
-            let embedding = try await generateEmbedding(for: chunk.text)
+            // Prepend the document title to the text we embed (not the
+            // text we store) so queries containing the title — e.g.
+            // "what's on Marcus Shaw's resume?" — boost cosine similarity
+            // against chunks from that document. The displayed snippet
+            // stays clean; only the vector is title-aware.
+            let embeddingInput: String
+            if let title = title?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty {
+                embeddingInput = "\(title)\n\n\(chunk.text)"
+            } else {
+                embeddingInput = chunk.text
+            }
+            let embedding = try await generateEmbedding(for: embeddingInput)
 
             let entry = EmbeddingEntry(
                 id: UUID(),
@@ -119,19 +130,37 @@ final class RAGService {
         _ question: String,
         history: [ChatMessage] = [],
         maxContext: Int = 5,
-        fallbackDocuments: [RAGDocumentContext] = []
+        fallbackDocuments: [RAGDocumentContext] = [],
+        knowledgeBase: KnowledgeBaseService? = nil
     ) async throws -> (stream: AsyncThrowingStream<String, Error>, sources: [RAGSource]) {
-        let retrievalQuery = retrievalQuery(for: question, history: history)
+        // Pull the user-curated word bank context up-front while we still
+        // have access to the MainActor-isolated service.
+        let kbContext = await MainActor.run { knowledgeBase?.systemPromptContext() ?? "" }
+        let kbExpandedQuery = await MainActor.run {
+            knowledgeBase?.expandedQuery(for: question) ?? question
+        }
+        let kbBoostTokens = await MainActor.run {
+            knowledgeBase?.expandedBoostTokens(for: question) ?? []
+        }
+
+        let retrievalQuery = retrievalQuery(for: kbExpandedQuery, history: history)
         let queryEmbedding = try await generateEmbedding(for: retrievalQuery)
         // Hand the caller's live document set to the retriever so orphan
         // chunks from deleted/renamed docs can't poison the prompt.
         let liveIDs: Set<UUID>? = fallbackDocuments.isEmpty
             ? nil
             : Set(fallbackDocuments.map(\.id))
+        // Title lookup powers the title-match boost in retrieval so a
+        // question like "what's on Marcus Shaw's resume?" beats a long
+        // unrelated doc on raw cosine alone.
+        let titleLookup = Dictionary(uniqueKeysWithValues: fallbackDocuments.map { ($0.id, $0.title) })
         let results = await retrieveRelevantChunks(
             queryEmbedding: queryEmbedding,
             maxContext: maxContext,
-            knownDocumentIDs: liveIDs
+            knownDocumentIDs: liveIDs,
+            query: retrievalQuery,
+            documentTitles: titleLookup,
+            extraBoostTokens: kbBoostTokens
         )
 
         let fallbackChunks = results.isEmpty
@@ -179,11 +208,12 @@ final class RAGService {
         }
 
         // Build the full message list: system + conversation history + current question
+        let userContextBlock = kbContext.isEmpty ? "" : "\n\n\(kbContext)\n"
         var messages: [ChatMessage] = [
             ChatMessage(role: .system, content: """
                 You are a helpful document assistant for Athenaeum, a macOS document library app.
                 This is an ongoing chat, so use the conversation history to understand follow-up questions.
-                Answer the user's latest question using ONLY the retrieved document context below.
+                Answer the user's latest question using ONLY the retrieved document context below.\(userContextBlock)
 
                 FORMATTING — IMPORTANT:
                 - Use clear Markdown structure. Use blank lines between paragraphs and list items.
@@ -263,25 +293,111 @@ final class RAGService {
     private func retrieveRelevantChunks(
         queryEmbedding: [Float],
         maxContext: Int,
-        knownDocumentIDs: Set<UUID>? = nil
+        knownDocumentIDs: Set<UUID>? = nil,
+        query: String = "",
+        documentTitles: [UUID: String] = [:],
+        extraBoostTokens: Set<String> = []
     ) async -> [SearchResult] {
-        // Over-fetch so that filtering for live docs still leaves us with
-        // enough chunks to satisfy `maxContext`. 4× is plenty even when most
-        // of the index is orphaned.
-        let overfetch = max(maxContext * 4, 20)
+        // Over-fetch so that filtering, boosting and diversity capping all
+        // still leave enough chunks to satisfy `maxContext`. 6× covers
+        // pathological cases where one giant doc dominates the topK.
+        let overfetch = max(maxContext * 6, 30)
 
-        func filterToLive(_ results: [SearchResult]) -> [SearchResult] {
-            guard let live = knownDocumentIDs else { return results }
-            return results.filter { live.contains($0.entry.documentID) }
+        func process(_ results: [SearchResult]) -> [SearchResult] {
+            let live = filterToLive(results, knownDocumentIDs: knownDocumentIDs)
+            let boosted = boostByTitleMatch(
+                live,
+                query: query,
+                titles: documentTitles,
+                extraTokens: extraBoostTokens
+            )
+            let diversified = capPerDocument(boosted, perDocLimit: 3)
+            return Array(diversified.prefix(maxContext))
         }
 
         let strictResults = await vectorStore.search(query: queryEmbedding, topK: overfetch, threshold: 0.3)
-        let strictLive = Array(filterToLive(strictResults).prefix(maxContext))
+        let strictLive = process(strictResults)
         if !strictLive.isEmpty { return strictLive }
 
         let looseResults = await vectorStore.search(query: queryEmbedding, topK: overfetch, threshold: -1)
-        let looseLive = Array(filterToLive(looseResults).prefix(maxContext))
-        return looseLive
+        return process(looseResults)
+    }
+
+    /// Drop chunks whose document is no longer in the caller's live set.
+    private func filterToLive(_ results: [SearchResult], knownDocumentIDs: Set<UUID>?) -> [SearchResult] {
+        guard let live = knownDocumentIDs else { return results }
+        return results.filter { live.contains($0.entry.documentID) }
+    }
+
+    /// If any meaningful query token appears in a document's title, boost
+    /// that document's chunks. Stops cosine similarity alone from drowning
+    /// a short title-relevant doc under a long unrelated one. Stopwords +
+    /// length filtering keep "what is the" from boosting everything.
+    private func boostByTitleMatch(
+        _ results: [SearchResult],
+        query: String,
+        titles: [UUID: String],
+        extraTokens: Set<String> = []
+    ) -> [SearchResult] {
+        guard !titles.isEmpty || !extraTokens.isEmpty else { return results }
+        guard !query.isEmpty || !extraTokens.isEmpty else { return results }
+        let stopwords: Set<String> = [
+            "the", "and", "for", "are", "was", "but", "you", "your",
+            "what", "who", "where", "when", "how", "why", "is", "in", "on",
+            "of", "to", "a", "an", "my", "i", "do", "does", "this", "that",
+            "have", "has", "had", "be", "as", "it", "from", "with", "about",
+            "tell", "me", "can", "could", "would", "should",
+        ]
+        var queryTokens = Set(
+            query.lowercased()
+                .components(separatedBy: CharacterSet.alphanumerics.inverted)
+                .filter { $0.count >= 3 && !stopwords.contains($0) }
+        )
+        // Fold in the Word Bank's expanded tokens — e.g. canonical names
+        // for any alias the user typed, so docs titled "Kaiser EOB" get
+        // boosted on questions like "any medical bills?".
+        queryTokens.formUnion(extraTokens.filter { $0.count >= 3 })
+        guard !queryTokens.isEmpty else { return results }
+
+        // Score: count distinct query tokens that appear in the title.
+        // Each match adds 0.15 to the chunk's similarity score — enough to
+        // outrank a single unrelated chunk that scored fractionally higher,
+        // not so much that we override a clearly-better passage.
+        let titleTokens: [UUID: Set<String>] = titles.mapValues { title in
+            Set(
+                title.lowercased()
+                    .components(separatedBy: CharacterSet.alphanumerics.inverted)
+                    .filter { $0.count >= 3 }
+            )
+        }
+
+        return results.map { r -> SearchResult in
+            let tokens = titleTokens[r.entry.documentID] ?? []
+            let matches = queryTokens.intersection(tokens).count
+            guard matches > 0 else { return r }
+            // SearchResult is a let-only struct (id is auto-assigned), so
+            // we construct a fresh row with the boosted score rather than
+            // mutating in place.
+            return SearchResult(
+                entry: r.entry,
+                score: min(1.0, r.score + Float(matches) * 0.15)
+            )
+        }
+        .sorted { $0.score > $1.score }
+    }
+
+    /// Take at most `perDocLimit` chunks per document so one giant doc
+    /// can't monopolize the answer. Preserves global sort order otherwise.
+    private func capPerDocument(_ results: [SearchResult], perDocLimit: Int) -> [SearchResult] {
+        var counts: [UUID: Int] = [:]
+        var out: [SearchResult] = []
+        for r in results {
+            let current = counts[r.entry.documentID, default: 0]
+            if current >= perDocLimit { continue }
+            counts[r.entry.documentID] = current + 1
+            out.append(r)
+        }
+        return out
     }
 
     // MARK: - Index sanitization
@@ -304,7 +420,7 @@ final class RAGService {
 
     /// Nuke the entire index and re-embed every passed-in document. Used by
     /// the "Rebuild Vector Index" action in Settings ▸ Storage.
-    func rebuildIndex(from documents: [(id: UUID, text: String)]) async throws {
+    func rebuildIndex(from documents: [(id: UUID, text: String, title: String?)]) async throws {
         // Clear by removing each known document; cheap and avoids touching
         // VectorStore internals.
         let existing = await vectorStore.indexedDocumentIDs
@@ -313,7 +429,7 @@ final class RAGService {
         }
         try? await vectorStore.save()
         for doc in documents where !doc.text.isEmpty {
-            try await indexDocument(id: doc.id, text: doc.text)
+            try await indexDocument(id: doc.id, text: doc.text, title: doc.title)
         }
     }
 
@@ -491,7 +607,9 @@ struct RAGSource: Identifiable, Sendable {
     let relevance: Float
     let pageNumber: Int?
 
-    init(documentID: UUID, documentTitle: String? = nil, chunkText: String, relevance: Float, pageNumber: Int?) {
+    // `nonisolated` so this value type can be constructed off the main
+    // actor — used by `StoredSource.ragSource` on the persisted-chat path.
+    nonisolated init(documentID: UUID, documentTitle: String? = nil, chunkText: String, relevance: Float, pageNumber: Int?) {
         self.documentID = documentID
         self.documentTitle = documentTitle
         self.chunkText = chunkText

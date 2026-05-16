@@ -178,7 +178,7 @@ final class DocumentProcessor {
 
             // Re-index for RAG after reprocessing
             if !extractedText.isEmpty, let ragService {
-                try? await ragService.indexDocument(id: document.id, text: extractedText)
+                try? await ragService.indexDocument(id: document.id, text: extractedText, title: document.title)
             }
         } catch {
             document.processingStatus = .failed
@@ -246,7 +246,7 @@ final class DocumentProcessor {
 
             // Index in vector store for RAG (non-fatal if it fails — no model installed yet)
             if !extractedText.isEmpty, let ragService {
-                try? await ragService.indexDocument(id: document.id, text: extractedText)
+                try? await ragService.indexDocument(id: document.id, text: extractedText, title: document.title)
             }
         } catch {
             document.processingStatus = .failed
@@ -385,9 +385,91 @@ final class DocumentProcessor {
         return attributed.string
     }
 
+    // MARK: - AI Rename
+    //
+    // Read the document's extracted text, ask the chat model to propose a
+    // clean filename, sanitize the suggestion for file-system safety, and
+    // hand it back. Returns nil when the model fails or returns garbage —
+    // the caller surfaces a banner in that case.
+    @MainActor
+    func suggestFilename(for document: Document) async -> String? {
+        guard let text = document.extractedText?.trimmingCharacters(in: .whitespacesAndNewlines),
+              text.count >= 20 else {
+            return nil
+        }
+        do {
+            let prompt = TaggingPrompts.renameDocument(
+                text: text,
+                originalFilename: document.originalFilename,
+                documentType: document.documentTypeName,
+                category: document.categoryName
+            )
+            let raw = try await llmService.generate(
+                role: .chat,
+                prompt: prompt,
+                maxTokens: 40,
+                temperature: 0.2
+            )
+            return sanitizeFilename(raw)
+        } catch {
+            return nil
+        }
+    }
+
+    /// Strip LLM noise (quotes, prose, extensions) and constrain the result
+    /// to characters the file system + Finder are happy with.
+    private func sanitizeFilename(_ raw: String) -> String? {
+        var s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Strip wrapping quotes the model loves to add.
+        if (s.first == "\"" && s.last == "\"") || (s.first == "'" && s.last == "'") {
+            s = String(s.dropFirst().dropLast())
+        }
+        // Strip a trailing extension if the model added one.
+        if let dot = s.lastIndex(of: "."), s.distance(from: dot, to: s.endIndex) <= 6 {
+            s = String(s[..<dot])
+        }
+        // Replace forbidden characters with spaces, then collapse whitespace.
+        let forbidden: Set<Character> = [":", "/", "\\", "*", "?", "\"", "<", ">", "|", "\n", "\r", "\t"]
+        s = String(s.map { forbidden.contains($0) ? " " : $0 })
+        s = s.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+        // Don't accept a multi-sentence essay.
+        if s.count > 90 { s = String(s.prefix(90)) }
+        guard s.count >= 3 else { return nil }
+        return s
+    }
+
+    /// Commit a renamed title to the document. Updates the SwiftData title
+    /// only — the on-disk vault file keeps its original name so other
+    /// processes that opened it earlier still resolve.
+    @MainActor
+    @discardableResult
+    func applyRename(_ document: Document, to newTitle: String) -> Bool {
+        let trimmed = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        document.title = trimmed
+        document.modifiedAt = .now
+        document.rebuildSearchableText()
+        try? modelContext.save()
+        return true
+    }
+
     // MARK: - LLM Classification
 
     private func classifyAndTag(document: Document, text: String, metadata: ExtractedDocumentMetadata) async {
+        // Honor the "Auto-tag with AI" toggle. When off we still apply the
+        // offline-rules classifier as a minimum-effort fallback so the
+        // document doesn't end up entirely tag-less.
+        let autoTagEnabled = UserDefaults.standard.object(forKey: "autoTagEnabled") as? Bool ?? true
+        guard autoTagEnabled else {
+            let fallback = OfflineDocumentClassifier.classify(
+                text: text,
+                filename: document.originalFilename,
+                metadata: metadata
+            )
+            applyClassification(fallback, to: document)
+            return
+        }
+
         // Gather existing tags for context
         let fetchDescriptor = FetchDescriptor<Tag>(sortBy: [SortDescriptor(\.name)])
         let existingTags = (try? modelContext.fetch(fetchDescriptor))?.map(\.name) ?? []

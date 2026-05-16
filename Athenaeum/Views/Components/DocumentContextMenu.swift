@@ -5,12 +5,14 @@ import QuickLook
 struct DocumentContextMenu: ViewModifier {
     let document: Document
     @Environment(\.modelContext) private var modelContext
+    @Query(sort: \Folder.name) private var allFolders: [Folder]
     @State private var showDeleteConfirmation = false
     @State private var quickLookURL: URL?
     @State private var quickLookTempURL: URL?
     @State private var showInAppPreview = false
     @State private var showAddTagSheet = false
     @State private var newTagText: String = ""
+    @State private var showFolderCreator = false
 
     func body(content: Content) -> some View {
         content
@@ -112,6 +114,17 @@ struct DocumentContextMenu: ViewModifier {
 
                 // Processing
                 Button {
+                    NotificationCenter.default.post(
+                        name: .aiRenameDocuments,
+                        object: nil,
+                        userInfo: ["documentIDs": [document.id]]
+                    )
+                } label: {
+                    Label("Rename with AI…", systemImage: "sparkles")
+                }
+                .disabled(document.extractedText?.isEmpty != false)
+
+                Button {
                     reprocessDocument()
                 } label: {
                     Label("Reprocess", systemImage: "arrow.clockwise")
@@ -122,6 +135,35 @@ struct DocumentContextMenu: ViewModifier {
                     showAddTagSheet = true
                 } label: {
                     Label("Add Tag…", systemImage: "tag.fill")
+                }
+
+                // Add-to-Folder submenu — list every folder, then a
+                // "New folder…" affordance at the bottom for the create
+                // flow. Existing folders that already contain this doc
+                // show a checkmark and toggle membership off on click.
+                Menu {
+                    if allFolders.isEmpty {
+                        Text("No folders yet")
+                    } else {
+                        ForEach(allFolders) { folder in
+                            Button {
+                                toggleMembership(in: folder)
+                            } label: {
+                                Label(
+                                    folder.name,
+                                    systemImage: isMember(of: folder) ? "checkmark.circle.fill" : "folder"
+                                )
+                            }
+                        }
+                    }
+                    Divider()
+                    Button {
+                        showFolderCreator = true
+                    } label: {
+                        Label("New folder…", systemImage: "plus")
+                    }
+                } label: {
+                    Label("Add to Folder", systemImage: "folder")
                 }
 
                 Button {
@@ -142,6 +184,11 @@ struct DocumentContextMenu: ViewModifier {
             }
             .sheet(isPresented: $showAddTagSheet) {
                 addTagSheet
+            }
+            .sheet(isPresented: $showFolderCreator) {
+                FolderEditorSheet(folder: nil) {
+                    showFolderCreator = false
+                }
             }
             .alert("Delete Document?", isPresented: $showDeleteConfirmation) {
                 Button("Cancel", role: .cancel) {}
@@ -322,6 +369,23 @@ struct DocumentContextMenu: ViewModifier {
         newTagText = ""
         showAddTagSheet = false
         NotificationCenter.default.post(name: .tagsDidChange, object: nil)
+    }
+
+    private func isMember(of folder: Folder) -> Bool {
+        document.folders?.contains(where: { $0.id == folder.id }) == true
+    }
+
+    /// Add or remove the document from a folder. SwiftData manages the
+    /// inverse relationship; we just mutate the array on either side.
+    private func toggleMembership(in folder: Folder) {
+        if document.folders == nil { document.folders = [] }
+        if isMember(of: folder) {
+            document.folders?.removeAll { $0.id == folder.id }
+        } else {
+            document.folders?.append(folder)
+        }
+        document.modifiedAt = .now
+        try? modelContext.save()
     }
 
     /// Strip every tag attachment off this document without touching the

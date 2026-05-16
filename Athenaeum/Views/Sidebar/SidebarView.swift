@@ -2,11 +2,17 @@ import SwiftUI
 import SwiftData
 
 struct SidebarView: View {
+    @Environment(\.modelContext) private var modelContext
     @Query(sort: \Tag.name) private var tags: [Tag]
+    @Query(sort: \Folder.name) private var folders: [Folder]
     @Query private var allDocuments: [Document]
     @Binding var selectedTag: String?
     @Binding var selectedSection: SidebarSection
     @AppStorage("hiddenTags") private var hiddenTagsRaw: String = ""
+
+    @State private var showFolderEditor = false
+    @State private var folderEditTarget: Folder?
+    @State private var folderDeleteTarget: Folder?
 
     private var visibleTags: [Tag] {
         let hidden = Set(hiddenTagsRaw.split(separator: ",").map { String($0) })
@@ -36,6 +42,13 @@ struct SidebarView: View {
         name
             .replacingOccurrences(of: " Documents", with: "")
             .replacingOccurrences(of: " & ", with: " · ")
+    }
+
+    /// Resolve a folder's stored hex string to a SwiftUI Color. Falls
+    /// back to clay if the hex parse fails (shouldn't happen — we only
+    /// write `Folder.defaultColors` strings — but defensive).
+    private func folderColor(_ folder: Folder) -> Color {
+        Color(hex: UInt(folder.colorHex, radix: 16) ?? 0xB98A4F)
     }
 
     private func iconForCategory(_ slug: String) -> String {
@@ -114,6 +127,65 @@ struct SidebarView: View {
             } header: {
                 Text("Library")
                     .eyebrowStyle()
+            }
+
+            // MARK: - Folders
+            Section {
+                ForEach(folders) { folder in
+                    HStack(spacing: Japandi.Spacing.xs) {
+                        Image(systemName: "folder.fill")
+                            .font(.system(size: 11, weight: .light))
+                            .foregroundStyle(folderColor(folder))
+                            .frame(width: 14)
+                        Text(folder.name)
+                            .font(Japandi.Typography.body)
+                            .foregroundStyle(Japandi.Colors.textPrimaryFB)
+                            .lineLimit(1)
+                        Spacer()
+                        Text("\(folder.documents?.count ?? 0)")
+                            .font(Japandi.Typography.caption)
+                            .foregroundStyle(Japandi.Colors.textTertiaryFB)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 1)
+                            .background(Japandi.Colors.surfaceFallback)
+                            .clipShape(Capsule())
+                    }
+                    .tag(SidebarSection.folder(folder.id))
+                    .contentShape(Rectangle())
+                    .contextMenu {
+                        Button("Rename…") {
+                            folderEditTarget = folder
+                            showFolderEditor = true
+                        }
+                        Divider()
+                        Button("Delete folder", role: .destructive) {
+                            folderDeleteTarget = folder
+                        }
+                    }
+                }
+
+                // "New folder" affordance — always at the end of the
+                // section so users discover the create flow without a
+                // separate Settings detour.
+                Button {
+                    folderEditTarget = nil
+                    showFolderEditor = true
+                } label: {
+                    HStack(spacing: Japandi.Spacing.xs) {
+                        Image(systemName: "plus.circle")
+                            .font(.system(size: 11, weight: .light))
+                            .foregroundStyle(Japandi.Colors.accentMutedFallback)
+                            .frame(width: 14)
+                        Text("New folder…")
+                            .font(Japandi.Typography.body)
+                            .foregroundStyle(Japandi.Colors.textSecondaryFB)
+                        Spacer()
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            } header: {
+                sectionHeader(title: "Folders", count: folders.count)
             }
 
             // MARK: - Tags
@@ -205,6 +277,30 @@ struct SidebarView: View {
         }
         .listStyle(.sidebar)
         .scrollContentBackground(.hidden)
+        .sheet(isPresented: $showFolderEditor) {
+            FolderEditorSheet(folder: folderEditTarget) {
+                folderEditTarget = nil
+                showFolderEditor = false
+            }
+        }
+        .confirmationDialog(
+            folderDeleteTarget.map { "Delete folder \u{201C}\($0.name)\u{201D}?" } ?? "Delete folder?",
+            isPresented: Binding(
+                get: { folderDeleteTarget != nil },
+                set: { if !$0 { folderDeleteTarget = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: folderDeleteTarget
+        ) { folder in
+            Button("Delete", role: .destructive) {
+                modelContext.delete(folder)
+                try? modelContext.save()
+                folderDeleteTarget = nil
+            }
+            Button("Cancel", role: .cancel) { folderDeleteTarget = nil }
+        } message: { folder in
+            Text("The folder is removed. The \(folder.documents?.count ?? 0) document(s) inside stay in your library.")
+        }
         .tint(Japandi.Colors.accentFallback)
         .background(Japandi.Colors.bgFallback)
         .safeAreaInset(edge: .top) {
@@ -311,6 +407,8 @@ enum SidebarSection: Hashable, Sendable {
     case tag(String)
     /// Filter by a taxonomy category slug (e.g. `real-estate-property-documents`).
     case category(String)
+    /// Filter to a user-created folder by its persisted UUID.
+    case folder(UUID)
     case chat
     case models
 }

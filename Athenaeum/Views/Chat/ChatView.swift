@@ -4,6 +4,7 @@ import SwiftData
 struct ChatView: View {
     var llmService: LLMServiceProtocol
     var ragService: RAGService
+    var knowledgeBase: KnowledgeBaseService?
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \Document.importedAt, order: .reverse) private var documents: [Document]
     /// Persisted conversations, newest first. Drives the history popover.
@@ -433,7 +434,8 @@ struct ChatView: View {
                     text,
                     history: history,
                     maxContext: 8,
-                    fallbackDocuments: fallbackDocuments
+                    fallbackDocuments: fallbackDocuments,
+                    knowledgeBase: knowledgeBase
                 )
                 currentSources = sources
                 if !sources.isEmpty {

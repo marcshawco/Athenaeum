@@ -37,7 +37,12 @@ final class ChatConversation {
 /// Mirror of the in-memory `ChatMessage` struct that lives in `LLMService`,
 /// without the Sendable / Identifiable concerns of the runtime type. Encoded
 /// to JSON inside `ChatConversation.messagesJSON`.
-struct StoredMessage: Codable, Hashable {
+///
+/// Explicitly `nonisolated` so the synthesized Codable conformance can be
+/// used from any context. The project ships with
+/// `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, which would otherwise pin
+/// these pure value types to the main actor and block JSON decoding off-main.
+nonisolated struct StoredMessage: Codable, Hashable {
     var id: UUID
     var role: String          // "system" | "user" | "assistant"
     var content: String
@@ -65,7 +70,7 @@ struct StoredMessage: Codable, Hashable {
     }
 }
 
-struct StoredSource: Codable, Hashable {
+nonisolated struct StoredSource: Codable, Hashable {
     var documentID: UUID
     var documentTitle: String?
     var chunkText: String
@@ -93,7 +98,7 @@ struct StoredSource: Codable, Hashable {
 
 /// Versioned envelope written to disk. v1 is the only version today but the
 /// envelope lets us migrate without writing a SwiftData migration.
-struct StoredMessageEnvelope: Codable {
+nonisolated struct StoredMessageEnvelope: Codable {
     var version: Int
     var messages: [StoredMessage]
 }

@@ -26,6 +26,7 @@ struct ContentView: View {
     @State private var mlxManager = MLXModelManager()
     @State private var autoScanRegistry = AutoScanRegistry()
     @State private var autoScanCoordinator: AutoScanCoordinator?
+    @State private var knowledgeBase: KnowledgeBaseService?
     @AppStorage("inferenceEngine") private var inferenceEngineRaw: String = InferenceEngine.llamaCpp.rawValue
 
     // UI state
@@ -35,6 +36,8 @@ struct ContentView: View {
     @State private var importNotificationText = ""
     @State private var reindexCandidates: Int = 0
     @State private var isReindexing = false
+    @State private var aiRenameSuggestions: [AIRenameSuggestion] = []
+    @State private var isGeneratingRenames = false
 
     var body: some View {
         Group {
@@ -67,6 +70,24 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .closeInspector)) { _ in
             showDetailPanel = false
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .aiRenameDocuments)) { note in
+            guard let ids = note.userInfo?["documentIDs"] as? [UUID] else { return }
+            startAIRename(forDocumentIDs: ids)
+        }
+        .sheet(isPresented: Binding(
+            get: { !aiRenameSuggestions.isEmpty || isGeneratingRenames },
+            set: { if !$0 { aiRenameSuggestions.removeAll(); isGeneratingRenames = false } }
+        )) {
+            AIRenameSheet(
+                suggestions: $aiRenameSuggestions,
+                isLoading: isGeneratingRenames,
+                onApplyAll: applyAIRenames,
+                onCancel: {
+                    aiRenameSuggestions.removeAll()
+                    isGeneratingRenames = false
+                }
+            )
         }
         .onReceive(NotificationCenter.default.publisher(for: .openSettings)) { _ in
             showSettings = true
@@ -247,16 +268,77 @@ struct ContentView: View {
         columnVisibility = .all
     }
 
+    // MARK: - AI Rename
+
+    /// One row in the review sheet: the doc we want to rename, the current
+    /// title, the model's proposal, and a user-editable `accepted` field
+    /// so the user can tweak before confirming.
+    struct AIRenameSuggestion: Identifiable, Hashable {
+        let id: UUID                  // matches Document.id
+        let originalTitle: String
+        let proposed: String
+        var accepted: String
+        var isApplied: Bool = false
+    }
+
+    private func startAIRename(forDocumentIDs ids: [UUID]) {
+        guard let processor else { return }
+        isGeneratingRenames = true
+        aiRenameSuggestions = []
+        Task { @MainActor in
+            let fetch = FetchDescriptor<Document>(
+                predicate: #Predicate<Document> { ids.contains($0.id) }
+            )
+            let docs = (try? modelContext.fetch(fetch)) ?? []
+            var results: [AIRenameSuggestion] = []
+            for doc in docs {
+                if let suggestion = await processor.suggestFilename(for: doc) {
+                    results.append(AIRenameSuggestion(
+                        id: doc.id,
+                        originalTitle: doc.title,
+                        proposed: suggestion,
+                        accepted: suggestion
+                    ))
+                }
+            }
+            aiRenameSuggestions = results
+            isGeneratingRenames = false
+            if results.isEmpty {
+                await showBanner("AI rename couldn't read enough text from those documents")
+            }
+        }
+    }
+
+    private func applyAIRenames() {
+        guard let processor else { return }
+        let snapshot = aiRenameSuggestions
+        Task { @MainActor in
+            let ids = snapshot.map(\.id)
+            let fetch = FetchDescriptor<Document>(
+                predicate: #Predicate<Document> { ids.contains($0.id) }
+            )
+            let docs = (try? modelContext.fetch(fetch)) ?? []
+            let docByID = Dictionary(uniqueKeysWithValues: docs.map { ($0.id, $0) })
+            var renamed = 0
+            for s in snapshot {
+                guard let doc = docByID[s.id] else { continue }
+                if processor.applyRename(doc, to: s.accepted) { renamed += 1 }
+            }
+            aiRenameSuggestions.removeAll()
+            await showBanner("Renamed \(renamed) document\(renamed == 1 ? "" : "s") with AI")
+        }
+    }
+
     private func rebuildVectorIndex() {
         guard let ragService else { return }
         isReindexing = true
         Task {
             let fetch = FetchDescriptor<Document>()
             let docs = (try? modelContext.fetch(fetch)) ?? []
-            let items = docs.compactMap { doc -> (id: UUID, text: String)? in
+            let items = docs.compactMap { doc -> (id: UUID, text: String, title: String?)? in
                 guard doc.processingStatus == .complete,
                       let text = doc.extractedText, !text.isEmpty else { return nil }
-                return (doc.id, text)
+                return (doc.id, text, doc.title)
             }
             do {
                 try await ragService.rebuildIndex(from: items)
@@ -280,7 +362,7 @@ struct ContentView: View {
                 && (doc.extractedText?.isEmpty == false)
                 && !indexed.contains(doc.id) {
                 if let text = doc.extractedText {
-                    try? await ragService.indexDocument(id: doc.id, text: text)
+                    try? await ragService.indexDocument(id: doc.id, text: text, title: doc.title)
                 }
             }
             await refreshReindexCandidates()
@@ -322,7 +404,7 @@ struct ContentView: View {
     @ViewBuilder
     private var contentColumn: some View {
         switch selectedSection {
-        case .all, .recent, .processing, .untagged, .tag, .category:
+        case .all, .recent, .processing, .untagged, .tag, .category, .folder:
             VStack(spacing: 0) {
                 StatsDashboardView()
                 Divider().foregroundStyle(Japandi.Colors.borderFallback)
@@ -338,7 +420,7 @@ struct ContentView: View {
             }
         case .chat:
             if let ragService, let llmService {
-                ChatView(llmService: llmService, ragService: ragService)
+                ChatView(llmService: llmService, ragService: ragService, knowledgeBase: knowledgeBase)
             } else {
                 placeholderView("Setting up AI services...", icon: "cpu")
             }
@@ -438,6 +520,10 @@ struct ContentView: View {
         ragService = rag
 
         processor = DocumentProcessor(llmService: service, ragService: rag, modelContext: modelContext)
+        // KnowledgeBaseService is MainActor-bound and reads SwiftData on
+        // every call, so editing entries in Settings instantly affects the
+        // next chat turn — no cache invalidation needed.
+        knowledgeBase = KnowledgeBaseService(context: modelContext)
         // Hand the processor to the auto-scan coordinator so it can route
         // freshly-detected files straight into the import + tag pipeline.
         let coordinator = AutoScanCoordinator(registry: autoScanRegistry)
@@ -524,7 +610,7 @@ struct ContentView: View {
         for doc in docs {
             guard doc.processingStatus == .complete,
                   let text = doc.extractedText, !text.isEmpty else { continue }
-            try? await ragService.indexDocument(id: doc.id, text: text)
+            try? await ragService.indexDocument(id: doc.id, text: text, title: doc.title)
         }
     }
 

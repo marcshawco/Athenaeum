@@ -24,6 +24,11 @@ final class Document {
     @Relationship(inverse: \Tag.documents)
     var tags: [Tag]?
 
+    /// User-curated folders this document belongs to. Inverse declared on
+    /// `Folder.documents`. SwiftData manages the join table; we just append
+    /// to either side and call `save()`.
+    var folders: [Folder]?
+
     var correspondent: String?             // who sent / authored
     var documentDate: Date?                // date from the document itself
     var importedAt: Date

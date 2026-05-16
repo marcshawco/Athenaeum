@@ -58,6 +58,7 @@ struct DocumentGridView: View {
                     onAddTag: { showBatchTagSheet = true },
                     onExport: { batchExport() },
                     onReprocess: { batchReprocess() },
+                    onAIRename: { batchAIRename() },
                     onDelete: { batchDelete() },
                     onClearSelection: { selectedDocuments.removeAll() }
                 )
@@ -339,6 +340,16 @@ struct DocumentGridView: View {
             processor.exportDocuments(Array(selectedDocuments), to: url)
         }
         selectedDocuments.removeAll()
+    }
+
+    private func batchAIRename() {
+        let ids = selectedDocuments.map(\.id)
+        guard !ids.isEmpty else { return }
+        NotificationCenter.default.post(
+            name: .aiRenameDocuments,
+            object: nil,
+            userInfo: ["documentIDs": ids]
+        )
     }
 
     private func batchReprocess() {

@@ -11,6 +11,7 @@ struct SettingsView: View {
     @AppStorage("maxGPULayers") private var maxGPULayers = -1
     @AppStorage("contextSize") private var contextSize = 4096
     @AppStorage("inferenceEngine") private var inferenceEngineRaw: String = InferenceEngine.llamaCpp.rawValue
+    @AppStorage("autoTagEnabled") private var autoTagEnabled: Bool = true
     @State private var vaultPath = DocumentVaultService.shared.vaultURL.path
     @State private var selection: SettingsTab = .general
     /// First time Settings opens we land on Help & Tour instead of General, so
@@ -21,7 +22,7 @@ struct SettingsView: View {
     var autoScanRegistry: AutoScanRegistry
 
     enum SettingsTab: Hashable {
-        case help, general, ai, autoscan, tags, storage, about
+        case help, general, ai, autoscan, tags, wordBank, storage, about
     }
 
     var body: some View {
@@ -81,6 +82,7 @@ struct SettingsView: View {
             sidebarRow(.ai,       icon: "cpu",           label: "AI Models")
             sidebarRow(.autoscan, icon: "folder.badge.gearshape", label: "Auto-Scan")
             sidebarRow(.tags,     icon: "tag",           label: "Tag Library")
+            sidebarRow(.wordBank, icon: "character.book.closed", label: "Word Bank")
             sidebarRow(.storage,  icon: "internaldrive", label: "Storage")
             sidebarRow(.about,    icon: "info.circle",   label: "About")
             Spacer()
@@ -139,6 +141,7 @@ struct SettingsView: View {
                 case .ai:       aiTab
                 case .autoscan: AutoScanSettingsView(registry: autoScanRegistry)
                 case .tags:     TagLibraryView()
+                case .wordBank: WordBankView()
                 case .storage:  storageTab
                 case .about:    aboutTab
                 }
@@ -220,6 +223,22 @@ struct SettingsView: View {
 
             Section("App Icon") {
                 appIconPicker
+            }
+
+            Section("Tagging") {
+                Toggle(isOn: $autoTagEnabled) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Auto-tag new documents with AI")
+                            .font(Japandi.Typography.body)
+                            .foregroundStyle(Japandi.Colors.textPrimaryFB)
+                        Text("Uses the local tagger model to read each new document and assign tags + a 500-type document classification. Turn off to import without AI tagging — you can always run \u{201C}Reprocess\u{201D} later.")
+                            .font(Japandi.Typography.caption)
+                            .foregroundStyle(Japandi.Colors.textTertiaryFB)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .toggleStyle(.switch)
+                .tint(Japandi.Colors.accentFallback)
             }
 
             Section("Import") {

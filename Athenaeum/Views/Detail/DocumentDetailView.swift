@@ -13,16 +13,29 @@ struct DocumentDetailView: View {
     @State private var showTypePicker = false
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                headerSection
-                inspectorRule
-                metadataSection
-                inspectorRule
-                tagsSection
-                inspectorRule
-                contentPreviewSection
+        // Split the inspector into a scrollable metadata column at the top
+        // and a "full-bleed" preview pane at the bottom that fills whatever
+        // height is left. Feels like an integrated document viewer instead
+        // of a tiny preview tile floating in an ocean of empty space.
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    headerSection
+                    inspectorRule
+                    metadataSection
+                    inspectorRule
+                    tagsSection
+                    inspectorRule
+                    summarySection
+                }
             }
+            .layoutPriority(0)
+
+            inspectorRule
+
+            previewSection
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .layoutPriority(1)
         }
         .background(Japandi.Colors.inspectorBg)
         .sheet(isPresented: $showPreview) {
@@ -384,26 +397,33 @@ struct DocumentDetailView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    // MARK: - Content Preview
+    // MARK: - Summary (scrolls with metadata at the top)
 
-    private var contentPreviewSection: some View {
-        VStack(alignment: .leading, spacing: Japandi.Spacing.sm) {
-            if let summary = document.summary {
-                VStack(alignment: .leading, spacing: Japandi.Spacing.xs) {
-                    Text("Summary · Local LLM")
-                        .font(Japandi.Typography.eyebrow)
-                        .textCase(.uppercase)
-                        .tracking(2)
-                        .foregroundStyle(Japandi.Colors.inspectorInk3)
+    @ViewBuilder
+    private var summarySection: some View {
+        if let summary = document.summary {
+            VStack(alignment: .leading, spacing: Japandi.Spacing.xs) {
+                Text("Summary · Local LLM")
+                    .font(Japandi.Typography.eyebrow)
+                    .textCase(.uppercase)
+                    .tracking(2)
+                    .foregroundStyle(Japandi.Colors.inspectorInk3)
 
-                    Text(summary)
-                        .font(.system(size: 12))
-                        .lineSpacing(3)
-                        .foregroundStyle(Japandi.Colors.inspectorInk2)
-                }
-                .padding(.bottom, Japandi.Spacing.sm)
+                Text(summary)
+                    .font(.system(size: 12))
+                    .lineSpacing(3)
+                    .foregroundStyle(Japandi.Colors.inspectorInk2)
             }
+            .padding(.horizontal, 22)
+            .padding(.vertical, 14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
 
+    // MARK: - Preview (pinned, full-bleed, takes the rest of the inspector)
+
+    private var previewSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Text("Preview")
                     .font(Japandi.Typography.eyebrow)
@@ -414,25 +434,26 @@ struct DocumentDetailView: View {
                 Button {
                     showPreview = true
                 } label: {
-                    Text("Open full preview ›")
-                        .font(.system(size: 10.5))
-                        .foregroundStyle(Japandi.Colors.inspectorAccent)
+                    HStack(spacing: 4) {
+                        Text("Pop out")
+                            .font(.system(size: 10.5))
+                        Image(systemName: "arrow.up.left.and.arrow.down.right")
+                            .font(.system(size: 9))
+                    }
+                    .foregroundStyle(Japandi.Colors.inspectorAccent)
                 }
                 .buttonStyle(.plain)
-                .help("Open the full-size document preview window")
+                .help("Open the document in a full-size window")
             }
+            .padding(.horizontal, 22)
+            .padding(.top, 12)
+            .padding(.bottom, 8)
 
+            // Bleed the actual viewer edge-to-edge so it feels like a real
+            // document surface inside the inspector instead of a card.
             DocumentInlinePreview(document: document)
-                .frame(height: 260)
-                .clipShape(RoundedRectangle(cornerRadius: Japandi.Radius.sm, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: Japandi.Radius.sm, style: .continuous)
-                        .strokeBorder(Japandi.Colors.inspectorRule, lineWidth: 0.5)
-                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .padding(.horizontal, 22)
-        .padding(.vertical, 14)
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // MARK: - Actions

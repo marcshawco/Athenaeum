@@ -68,6 +68,16 @@ final class ModelDownloader {
                 filename: "ggml-model-Q4_K_M.gguf",
                 expectedSize: 5_000_000_000
             ),
+            // Optional premium chat model — Gemma 3 4B Instruct, 4-bit
+            // quant. ~2.6 GB, noticeably sharper than Mistral on
+            // instruction-following + multilingual chat. Once downloaded,
+            // `LocalLLMService.contextForRole(.chat)` prefers it.
+            HFModelInfo(
+                role: .chatPlus,
+                repoID: "bartowski/gemma-3-4b-it-GGUF",
+                filename: "gemma-3-4b-it-Q4_K_M.gguf",
+                expectedSize: 2_600_000_000
+            ),
         ]
     }
 

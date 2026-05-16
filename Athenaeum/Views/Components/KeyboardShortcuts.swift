@@ -40,6 +40,7 @@ struct BatchActionToolbar: View {
     var onAddTag: () -> Void
     var onExport: () -> Void
     var onReprocess: () -> Void
+    var onAIRename: () -> Void = {}
     var onDelete: () -> Void
     var onClearSelection: () -> Void
 
@@ -69,6 +70,10 @@ struct BatchActionToolbar: View {
 
                     Button(action: onReprocess) {
                         Label("Reprocess", systemImage: "arrow.clockwise")
+                    }
+
+                    Button(action: onAIRename) {
+                        Label("Rename with AI", systemImage: "sparkles")
                     }
 
                     Button(role: .destructive, action: onDelete) {
