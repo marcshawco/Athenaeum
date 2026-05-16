@@ -10,6 +10,7 @@ struct DocumentDetailView: View {
     @State private var showPreview = false
     @State private var isEditingDocumentDate = false
     @State private var editedDocumentDate = Date.now
+    @State private var showTypePicker = false
 
     var body: some View {
         ScrollView {
@@ -27,6 +28,23 @@ struct DocumentDetailView: View {
         .sheet(isPresented: $showPreview) {
             DocumentPreviewWindow(document: document)
                 .frame(minWidth: 760, idealWidth: 960, minHeight: 620, idealHeight: 760)
+        }
+        .sheet(isPresented: $showTypePicker) {
+            DocumentTypePicker(currentSlug: document.documentTypeSlug) { selected in
+                if let type = selected {
+                    document.documentTypeSlug = type.slug
+                    document.categorySlug = DocumentTaxonomy.category(containingTypeSlug: type.slug)?.slug
+                } else {
+                    document.documentTypeSlug = nil
+                    document.categorySlug = nil
+                }
+                document.modifiedAt = .now
+                document.rebuildSearchableText()
+                try? modelContext.save()
+                showTypePicker = false
+            } onCancel: {
+                showTypePicker = false
+            }
         }
     }
 
@@ -102,16 +120,21 @@ struct DocumentDetailView: View {
                     .truncationMode(.middle)
             }
 
-            // Taxonomy badges — resolved Document Type and parent Category from
+            // Taxonomy badge — resolved Document Type and parent Category from
             // the local LLM, anchored to the canonical 500-type reference list.
-            if let typeName = document.documentTypeName {
+            // Click to override with a searchable picker over all 500 types.
+            Button {
+                showTypePicker = true
+            } label: {
                 HStack(spacing: Japandi.Spacing.xxs) {
                     Image(systemName: "books.vertical")
                         .font(.system(size: 9))
                         .foregroundStyle(Japandi.Colors.inspectorAccent)
-                    Text(typeName)
+                    Text(document.documentTypeName ?? "Set document type…")
                         .font(.system(size: 11, weight: .medium, design: .serif))
-                        .foregroundStyle(Japandi.Colors.inspectorInk)
+                        .foregroundStyle(document.documentTypeName != nil
+                                         ? Japandi.Colors.inspectorInk
+                                         : Japandi.Colors.inspectorInk3)
                     if let categoryName = document.categoryName {
                         Text("·")
                             .foregroundStyle(Japandi.Colors.inspectorInk3)
@@ -121,6 +144,9 @@ struct DocumentDetailView: View {
                             .lineLimit(1)
                             .truncationMode(.tail)
                     }
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 8))
+                        .foregroundStyle(Japandi.Colors.inspectorInk3)
                 }
                 .padding(.horizontal, 9)
                 .padding(.vertical, 4)
@@ -130,6 +156,9 @@ struct DocumentDetailView: View {
                     Capsule().strokeBorder(Japandi.Colors.inspectorRule, lineWidth: 0.5)
                 )
             }
+            .buttonStyle(.plain)
+            .help("Choose the document type from the 500-type taxonomy")
+            .accessibilityLabel("Edit document type")
         }
         .padding(.horizontal, 22)
         .padding(.vertical, 18)

@@ -117,6 +117,8 @@ struct DocumentGridView: View {
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
+            .accessibilityLabel("Sort order")
+            .help("Sort order")
 
             Picker("View", selection: $viewMode) {
                 Image(systemName: "square.grid.2x2").tag(ViewMode.grid)

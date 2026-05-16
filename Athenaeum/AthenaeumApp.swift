@@ -22,6 +22,11 @@ struct AthenaeumApp: App {
                 }
                 .keyboardShortcut("i", modifiers: [.command])
 
+                Button("Scan Folder for Import...") {
+                    NotificationCenter.default.post(name: .scanFolderForImport, object: nil)
+                }
+                .keyboardShortcut("i", modifiers: [.command, .shift])
+
                 Button("Scan Document Vault") {
                     NotificationCenter.default.post(name: .scanDocumentVault, object: nil)
                 }
@@ -57,4 +62,7 @@ extension Notification.Name {
     static let scanDocumentVault  = Notification.Name("scanDocumentVault")
     static let toggleDocumentPreviewPane = Notification.Name("toggleDocumentPreviewPane")
     static let modelsDidChange    = Notification.Name("modelsDidChange")
+    static let mlxBundlesDidChange = Notification.Name("mlxBundlesDidChange")
+    static let tagsDidChange      = Notification.Name("tagsDidChange")
+    static let scanFolderForImport = Notification.Name("scanFolderForImport")
 }

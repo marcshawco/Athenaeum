@@ -23,12 +23,16 @@ struct ContentView: View {
     @State private var vectorStore = VectorStore()
     @State private var ragService: RAGService?
     @State private var vaultMonitor = DocumentVaultMonitor()
+    @State private var mlxManager = MLXModelManager()
+    @AppStorage("inferenceEngine") private var inferenceEngineRaw: String = InferenceEngine.llamaCpp.rawValue
 
     // UI state
     @AppStorage("showDetailPanel") private var showDetailPanel = true
     @State private var showSettings = false
     @State private var showImportNotification = false
     @State private var importNotificationText = ""
+    @State private var reindexCandidates: Int = 0
+    @State private var isReindexing = false
 
     var body: some View {
         Group {
@@ -45,6 +49,9 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .importDocuments)) { _ in
             openFilePicker()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .scanFolderForImport)) { _ in
+            openFolderForImport()
         }
         .onReceive(NotificationCenter.default.publisher(for: .openSettings)) { _ in
             showSettings = true
@@ -137,7 +144,92 @@ struct ContentView: View {
         .overlay(alignment: .bottom) {
             notificationBanner
         }
+        .overlay(alignment: .top) {
+            reindexBanner
+        }
         .spacePreviewShortcut()
+        .task {
+            await refreshReindexCandidates()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .documentsDeleted)) { _ in
+            Task { await refreshReindexCandidates() }
+        }
+    }
+
+    // Banner — surfaced when the vector store has fewer indexed documents
+    // than the library. Lets the user trigger a one-click re-index instead
+    // of waiting for the launch-time auto-reconciler.
+    @ViewBuilder
+    private var reindexBanner: some View {
+        if reindexCandidates > 0 {
+            HStack(spacing: Japandi.Spacing.xs) {
+                Image(systemName: "sparkle.magnifyingglass")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Japandi.Colors.accentFallback)
+                Text("\(reindexCandidates) document\(reindexCandidates == 1 ? "" : "s") not yet indexed for search.")
+                    .font(Japandi.Typography.caption)
+                    .foregroundStyle(Japandi.Colors.textSecondaryFB)
+                Spacer(minLength: Japandi.Spacing.sm)
+                if isReindexing {
+                    ProgressView().controlSize(.small)
+                    Text("Indexing…")
+                        .font(Japandi.Typography.caption)
+                        .foregroundStyle(Japandi.Colors.textTertiaryFB)
+                } else {
+                    Button("Re-index now") { reindexLibrary() }
+                        .buttonStyle(.plain)
+                        .font(Japandi.Typography.caption)
+                        .foregroundStyle(Japandi.Colors.accentFallback)
+                }
+                Button {
+                    reindexCandidates = 0
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(Japandi.Colors.textTertiaryFB)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Dismiss re-index banner")
+            }
+            .padding(.horizontal, Japandi.Spacing.md)
+            .padding(.vertical, 8)
+            .background(Japandi.Colors.washFallback)
+            .overlay(alignment: .bottom) {
+                Rectangle().fill(Japandi.Colors.borderFallback).frame(height: 0.5)
+            }
+            .transition(.move(edge: .top).combined(with: .opacity))
+        }
+    }
+
+    private func refreshReindexCandidates() async {
+        let fetch = FetchDescriptor<Document>()
+        let docs = (try? modelContext.fetch(fetch)) ?? []
+        let indexed = await vectorStore.indexedDocumentIDs
+        let candidates = docs.filter { doc in
+            doc.processingStatus == .complete
+                && (doc.extractedText?.isEmpty == false)
+                && !indexed.contains(doc.id)
+        }
+        await MainActor.run { reindexCandidates = candidates.count }
+    }
+
+    private func reindexLibrary() {
+        guard let ragService else { return }
+        isReindexing = true
+        Task {
+            let fetch = FetchDescriptor<Document>()
+            let docs = (try? modelContext.fetch(fetch)) ?? []
+            let indexed = await vectorStore.indexedDocumentIDs
+            for doc in docs where doc.processingStatus == .complete
+                && (doc.extractedText?.isEmpty == false)
+                && !indexed.contains(doc.id) {
+                if let text = doc.extractedText {
+                    try? await ragService.indexDocument(id: doc.id, text: text)
+                }
+            }
+            await refreshReindexCandidates()
+            await MainActor.run { isReindexing = false }
+        }
     }
 
     // Bottom status bar — local · private · model · index · sync.
@@ -174,7 +266,7 @@ struct ContentView: View {
     @ViewBuilder
     private var contentColumn: some View {
         switch selectedSection {
-        case .all, .recent, .processing, .untagged, .tag:
+        case .all, .recent, .processing, .untagged, .tag, .category:
             VStack(spacing: 0) {
                 StatsDashboardView()
                 Divider().foregroundStyle(Japandi.Colors.borderFallback)
@@ -269,6 +361,18 @@ struct ContentView: View {
         guard processor == nil else { return }
 
         modelManager.scanForModels()
+        mlxManager.scan()
+        // We always instantiate `LocalLLMService` (it backs llama.cpp via the
+        // already-bundled xcframework). The user-facing `inferenceEngine`
+        // setting is observed here so we can log the selection and forward
+        // it to services that need to differentiate. Once the MLX runtime
+        // (mlx-swift SPM) is added, swap this for a protocol-typed
+        // `LLMServiceProtocol` selected from the setting.
+        let engine = InferenceEngine(rawValue: inferenceEngineRaw) ?? .llamaCpp
+        if engine == .mlx && mlxManager.installedBundles.isEmpty {
+            // Surface a hint that the bundle hasn't been downloaded yet.
+            NSLog("[Athenaeum] MLX engine selected but no bundle installed; falling back to llama.cpp")
+        }
         let service = LocalLLMService(modelManager: modelManager)
         llmService = service
         modelDownloader = ModelDownloader(modelsDirectory: modelManager.modelsDirectory)
@@ -440,6 +544,51 @@ struct ContentView: View {
 
         if panel.runModal() == .OK {
             importFiles(panel.urls)
+        }
+    }
+
+    /// Recursively walk a folder the user picks and import every file with a
+    /// supported extension. Powers File ▸ Scan Folder for Import (⇧⌘I).
+    private func openFolderForImport() {
+        let panel = NSOpenPanel()
+        panel.title = "Scan Folder for Import"
+        panel.message = "Pick a folder. Every supported document found inside will be imported."
+        panel.prompt = "Scan & Import"
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.canCreateDirectories = false
+
+        guard panel.runModal() == .OK, let folderURL = panel.url else { return }
+
+        // Walk the folder. We rely on the same extension allow-list as the
+        // single-file picker to avoid sucking in random binaries.
+        let allowedExtensions: Set<String> = [
+            "pdf", "txt", "rtf", "rtfd", "doc", "docx", "md", "html", "htm",
+            "png", "jpg", "jpeg", "tif", "tiff", "heic", "webp", "gif", "bmp"
+        ]
+
+        Task.detached(priority: .userInitiated) {
+            var urls: [URL] = []
+            guard let enumerator = FileManager.default.enumerator(
+                at: folderURL,
+                includingPropertiesForKeys: [.isRegularFileKey],
+                options: [.skipsHiddenFiles, .skipsPackageDescendants]
+            ) else { return }
+            for case let fileURL as URL in enumerator {
+                let values = try? fileURL.resourceValues(forKeys: [.isRegularFileKey])
+                guard values?.isRegularFile == true else { continue }
+                if allowedExtensions.contains(fileURL.pathExtension.lowercased()) {
+                    urls.append(fileURL)
+                }
+            }
+            await MainActor.run {
+                if urls.isEmpty {
+                    Task { await showBanner("No supported documents found in folder") }
+                } else {
+                    importFiles(urls)
+                }
+            }
         }
     }
 }

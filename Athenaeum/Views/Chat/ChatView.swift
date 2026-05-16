@@ -11,6 +11,11 @@ struct ChatView: View {
     @State private var streamedResponse: String = ""
     @State private var currentSources: [RAGSource] = []
     @State private var showSources = false
+    /// Sources retrieved for each assistant turn, keyed by message id. Lets
+    /// each message render its own compact "Sources used" disclosure so the
+    /// citations are traceable per turn rather than only globally.
+    @State private var sourcesByMessage: [UUID: [RAGSource]] = [:]
+    @State private var expandedSourcesByMessage: Set<UUID> = []
     @State private var generationTask: Task<Void, Never>?
     @State private var hasAttemptedIndexRepair = false
     @State private var indexedDocumentIDs: Set<UUID> = []
@@ -107,8 +112,13 @@ struct ChatView: View {
                     }
 
                     ForEach(messages) { message in
-                        ChatBubble(message: message)
-                            .id(message.id)
+                        VStack(alignment: .leading, spacing: Japandi.Spacing.xxs) {
+                            ChatBubble(message: message)
+                            if let perMessageSources = sourcesByMessage[message.id], !perMessageSources.isEmpty {
+                                inlineSourcesDisclosure(messageID: message.id, sources: perMessageSources)
+                            }
+                        }
+                        .id(message.id)
                     }
 
                     if !streamedResponse.isEmpty {
@@ -140,6 +150,55 @@ struct ChatView: View {
                 }
             }
         }
+    }
+
+    // MARK: - Inline sources (per assistant turn)
+
+    /// Compact "Sources used" row anchored beneath each assistant message.
+    /// Tappable disclosure that expands to show the same SourceCard rows
+    /// the global side-panel uses. Lets users audit citations per turn
+    /// without having to keep the right-hand panel open.
+    @ViewBuilder
+    private func inlineSourcesDisclosure(messageID: UUID, sources: [RAGSource]) -> some View {
+        let isOpen = expandedSourcesByMessage.contains(messageID)
+        VStack(alignment: .leading, spacing: Japandi.Spacing.xxs) {
+            Button {
+                if isOpen { expandedSourcesByMessage.remove(messageID) }
+                else      { expandedSourcesByMessage.insert(messageID) }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: isOpen ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(Japandi.Colors.accentFallback)
+                    Text("\(sources.count) source\(sources.count == 1 ? "" : "s") used")
+                        .font(Japandi.Typography.caption)
+                        .foregroundStyle(Japandi.Colors.accentFallback)
+                    if !isOpen {
+                        Text("·")
+                            .foregroundStyle(Japandi.Colors.textTertiaryFB)
+                        Text(sources.prefix(2).map { $0.documentTitle ?? "(untitled)" }.joined(separator: " · "))
+                            .font(.system(size: 10.5, design: .monospaced))
+                            .foregroundStyle(Japandi.Colors.textTertiaryFB)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(isOpen ? "Hide sources used" : "Show sources used")
+
+            if isOpen {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(sources) { source in
+                        SourceCard(source: source)
+                    }
+                }
+                .padding(.leading, 14)
+                .padding(.top, 2)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .padding(.leading, Japandi.Spacing.sm)
     }
 
     // MARK: - Sources Panel
@@ -321,6 +380,9 @@ struct ChatView: View {
                 let finalContent = streamedResponse.trimmingCharacters(in: .whitespacesAndNewlines)
                 let response = ChatMessage(role: .assistant, content: finalContent.isEmpty ? "(no response)" : finalContent)
                 messages.append(response)
+                if !sources.isEmpty {
+                    sourcesByMessage[response.id] = sources
+                }
                 streamedResponse = ""
             } catch is CancellationError {
                 let partial = streamedResponse.trimmingCharacters(in: .whitespacesAndNewlines)

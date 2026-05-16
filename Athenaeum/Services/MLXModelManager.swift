@@ -136,7 +136,5 @@ final class MLXModelManager {
     }
 }
 
-extension Notification.Name {
-    /// Posted whenever an MLX bundle is installed, removed, or its state changes.
-    static let mlxBundlesDidChange = Notification.Name("mlxBundlesDidChange")
-}
+// Notification.Name.mlxBundlesDidChange is declared centrally in
+// `AthenaeumApp.swift` alongside the rest of the app-wide names.

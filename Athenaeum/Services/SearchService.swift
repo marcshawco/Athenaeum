@@ -86,6 +86,8 @@ final class SearchService {
             return documents.filter { doc in
                 doc.tags?.contains(where: { $0.name == tagName }) == true
             }
+        case .category(let slug):
+            return documents.filter { $0.categorySlug == slug }
         case .chat, .models:
             return documents
         }

@@ -72,6 +72,12 @@ final class Document {
         if let correspondent { parts.append(correspondent) }
         if let summary { parts.append(summary) }
         if let processingError { parts.append(processingError) }
+        // Index taxonomy facets so searching "lease agreement" or
+        // "real estate" finds documents that match by category/type even
+        // when those words don't appear in the body or tag list.
+        if let documentTypeSlug { parts.append(documentTypeSlug.replacingOccurrences(of: "-", with: " ")) }
+        if let documentTypeName { parts.append(documentTypeName) }
+        if let categoryName { parts.append(categoryName) }
         searchableText = parts.joined(separator: " ").lowercased()
     }
 }

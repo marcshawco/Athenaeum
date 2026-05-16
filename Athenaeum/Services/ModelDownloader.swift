@@ -118,8 +118,18 @@ final class ModelDownloader {
     // MARK: - URL Construction
 
     private func huggingFaceURL(repo: String, filename: String) -> URL {
-        // HuggingFace Hub download URL format
-        URL(string: "https://huggingface.co/\(repo)/resolve/main/\(filename)")!
+        // HuggingFace Hub download URL format. Path-escape the filename so
+        // names containing spaces or unicode don't produce an invalid URL.
+        let escapedFilename = filename
+            .addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)
+            ?? filename
+        let escapedRepo = repo
+            .addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)
+            ?? repo
+        let raw = "https://huggingface.co/\(escapedRepo)/resolve/main/\(escapedFilename)"
+        // Fall back to a sentinel URL on the impossible-but-defensive failure
+        // case; downloader will surface a clear network error rather than crash.
+        return URL(string: raw) ?? URL(string: "https://huggingface.co/")!
     }
 
     // MARK: - Delegate Callbacks

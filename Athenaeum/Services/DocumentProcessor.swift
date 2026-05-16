@@ -469,10 +469,10 @@ final class DocumentProcessor {
             attachTag(named: tagName, to: document)
         }
 
-        // Also attach the document_type as a tag so it shows up in search/filtering.
-        if let typeSlug = document.documentTypeSlug {
-            attachTag(named: typeSlug, to: document)
-        }
+        // Note: we deliberately do NOT attach `document.documentTypeSlug` as a
+        // Tag row. With 500 taxonomy types we'd flood the Tag table and
+        // dominate the sidebar tag list. The type is stored on Document and
+        // indexed in `searchableText` via `rebuildSearchableText`.
     }
 
     /// Loose normalizer for slugs returned by the LLM: lowercases, replaces

@@ -141,6 +141,9 @@ final class MLXBundleDownloader {
     private func huggingFaceURL(repo: String, revision: String, filename: String) -> URL {
         // HF's resolve endpoint returns the raw file with redirects we can follow.
         let escaped = filename.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? filename
-        return URL(string: "https://huggingface.co/\(repo)/resolve/\(revision)/\(escaped)")!
+        let escapedRepo = repo.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? repo
+        let escapedRev = revision.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? revision
+        let raw = "https://huggingface.co/\(escapedRepo)/resolve/\(escapedRev)/\(escaped)"
+        return URL(string: raw) ?? URL(string: "https://huggingface.co/")!
     }
 }

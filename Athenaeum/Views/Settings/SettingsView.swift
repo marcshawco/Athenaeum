@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
@@ -16,7 +17,7 @@ struct SettingsView: View {
     var modelManager: ModelManager
 
     enum SettingsTab: Hashable {
-        case general, ai, storage, about
+        case general, ai, tags, storage, about
     }
 
     var body: some View {
@@ -69,6 +70,7 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 2) {
             sidebarRow(.general, icon: "gear",         label: "General")
             sidebarRow(.ai,      icon: "cpu",          label: "AI Models")
+            sidebarRow(.tags,    icon: "tag",          label: "Tag Library")
             sidebarRow(.storage, icon: "internaldrive",label: "Storage")
             sidebarRow(.about,   icon: "info.circle",  label: "About")
             Spacer()
@@ -124,6 +126,7 @@ struct SettingsView: View {
                 switch selection {
                 case .general: generalTab
                 case .ai:      aiTab
+                case .tags:    TagLibraryView()
                 case .storage: storageTab
                 case .about:   aboutTab
                 }
@@ -531,8 +534,38 @@ struct SettingsView: View {
 
     // MARK: - Storage
 
+    @State private var integrityReport: VaultIntegrityReport?
+    @State private var integrityChecking = false
+
     private var storageTab: some View {
         Form {
+            Section("Integrity") {
+                VStack(alignment: .leading, spacing: Japandi.Spacing.xs) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Vault integrity check")
+                                .font(Japandi.Typography.body)
+                                .foregroundStyle(Japandi.Colors.textPrimaryFB)
+                            Text("Walks every document and verifies its file still exists in the vault.")
+                                .font(Japandi.Typography.caption)
+                                .foregroundStyle(Japandi.Colors.textTertiaryFB)
+                        }
+                        Spacer()
+                        if integrityChecking {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Button("Run check") {
+                                runIntegrityCheck()
+                            }
+                            .controlSize(.small)
+                        }
+                    }
+                    if let report = integrityReport {
+                        integrityResultView(report)
+                    }
+                }
+            }
+
             Section("Data Location") {
                 LabeledContent("Document Vault") {
                     VStack(alignment: .trailing, spacing: Japandi.Spacing.xs) {
@@ -604,6 +637,92 @@ struct SettingsView: View {
     private var vectorStorePath: String {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         return appSupport.appendingPathComponent("Athenaeum/vector_store.json").path
+    }
+
+    // MARK: - Vault integrity
+
+    /// Snapshot of a single vault check.
+    struct VaultIntegrityReport {
+        let totalDocuments: Int
+        let missing: [(title: String, path: String)]
+        let timestamp: Date
+
+        var isClean: Bool { missing.isEmpty }
+    }
+
+    @Environment(\.modelContext) private var integrityContext
+
+    private func runIntegrityCheck() {
+        integrityChecking = true
+        Task.detached(priority: .userInitiated) {
+            let report = await Self.performIntegrityCheck(context: integrityContext)
+            await MainActor.run {
+                integrityReport = report
+                integrityChecking = false
+            }
+        }
+    }
+
+    @MainActor
+    private static func performIntegrityCheck(context: ModelContext) async -> VaultIntegrityReport {
+        let fetch = FetchDescriptor<Document>()
+        let docs = (try? context.fetch(fetch)) ?? []
+        var missing: [(title: String, path: String)] = []
+        for doc in docs {
+            if let url = doc.storedFileURL,
+               FileManager.default.fileExists(atPath: url.path) {
+                continue
+            }
+            // No vault file. If we still have the externally-stored backup
+            // we don't treat it as missing — the reconciler can restore it.
+            if doc.fileData != nil { continue }
+            missing.append((title: doc.title, path: doc.storagePath ?? "—"))
+        }
+        return VaultIntegrityReport(
+            totalDocuments: docs.count,
+            missing: missing,
+            timestamp: .now
+        )
+    }
+
+    @ViewBuilder
+    private func integrityResultView(_ report: VaultIntegrityReport) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: report.isClean ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
+                .font(.system(size: 11))
+                .foregroundStyle(report.isClean ? Japandi.Colors.accentFallback : Japandi.Colors.warmFallback)
+            if report.isClean {
+                Text("\(report.totalDocuments) documents — every vault file is present.")
+                    .font(Japandi.Typography.caption)
+                    .foregroundStyle(Japandi.Colors.textSecondaryFB)
+            } else {
+                Text("\(report.missing.count) of \(report.totalDocuments) document\(report.missing.count == 1 ? "" : "s") missing from vault.")
+                    .font(Japandi.Typography.caption)
+                    .foregroundStyle(Japandi.Colors.warmFallback)
+            }
+        }
+        if !report.isClean {
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(report.missing.prefix(5), id: \.path) { entry in
+                    HStack(spacing: 4) {
+                        Text("·")
+                        Text(entry.title)
+                            .lineLimit(1)
+                        Text(entry.path)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .foregroundStyle(Japandi.Colors.textTertiaryFB)
+                    }
+                    .font(.system(size: 10.5, design: .monospaced))
+                }
+                if report.missing.count > 5 {
+                    Text("+\(report.missing.count - 5) more")
+                        .font(.system(size: 10.5, design: .monospaced))
+                        .foregroundStyle(Japandi.Colors.textTertiaryFB)
+                }
+            }
+            .padding(.leading, Japandi.Spacing.sm)
+        }
     }
 
     private func chooseVaultFolder() {

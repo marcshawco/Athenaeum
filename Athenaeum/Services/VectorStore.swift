@@ -66,6 +66,18 @@ actor VectorStore {
 
     var totalEntries: Int { entries.count }
 
+    /// Number of distinct documents that currently have at least one
+    /// embedding chunk in the store. Used to surface "re-index needed"
+    /// hints when the vault has documents that aren't represented here.
+    var indexedDocumentCount: Int {
+        Set(entries.map(\.documentID)).count
+    }
+
+    /// Set of document IDs currently represented in the index.
+    var indexedDocumentIDs: Set<UUID> {
+        Set(entries.map(\.documentID))
+    }
+
     // MARK: - Search
 
     /// Find the top-k most similar chunks to a query embedding.
