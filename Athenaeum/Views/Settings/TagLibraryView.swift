@@ -60,14 +60,40 @@ struct TagLibraryView: View {
     // MARK: - Header & search
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text("Tag Library")
-                .font(.system(size: 24, weight: .light, design: .serif))
-                .foregroundStyle(Japandi.Colors.textPrimaryFB)
-            Text("\(tags.count) tag\(tags.count == 1 ? "" : "s") · \(hiddenSet.count) hidden")
-                .font(Japandi.Typography.caption)
-                .foregroundStyle(Japandi.Colors.textTertiaryFB)
+        HStack(alignment: .firstTextBaseline) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Tag Library")
+                    .font(.system(size: 24, weight: .light, design: .serif))
+                    .foregroundStyle(Japandi.Colors.textPrimaryFB)
+                Text("\(tags.count) tag\(tags.count == 1 ? "" : "s") · \(hiddenSet.count) hidden · \(unusedTags.count) unused")
+                    .font(Japandi.Typography.caption)
+                    .foregroundStyle(Japandi.Colors.textTertiaryFB)
+            }
+            Spacer()
+            Button(action: clearUnusedTags) {
+                Label("Clear unused", systemImage: "trash")
+            }
+            .font(Japandi.Typography.caption)
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .disabled(unusedTags.isEmpty)
+            .help("Delete every tag that has zero attached documents")
         }
+    }
+
+    /// Tags with no attached documents — candidates for the "Clear unused" sweep.
+    private var unusedTags: [Tag] {
+        tags.filter { ($0.documents?.isEmpty ?? true) }
+    }
+
+    private func clearUnusedTags() {
+        let targets = unusedTags
+        guard !targets.isEmpty else { return }
+        for tag in targets {
+            modelContext.delete(tag)
+        }
+        try? modelContext.save()
+        NotificationCenter.default.post(name: .tagsDidChange, object: nil)
     }
 
     private var searchField: some View {

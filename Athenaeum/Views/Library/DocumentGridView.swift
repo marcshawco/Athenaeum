@@ -73,6 +73,7 @@ struct DocumentGridView: View {
                     onExport: { batchExport() },
                     onReprocess: { batchReprocess() },
                     onAIRename: { batchAIRename() },
+                    onClearTags: { batchClearTags() },
                     onDelete: { batchDelete() },
                     onClearSelection: { selectedDocuments.removeAll() }
                 )
@@ -495,6 +496,18 @@ struct DocumentGridView: View {
             let processor = BatchProcessor(modelContext: modelContext)
             processor.reprocessDocuments(docs)
         }
+    }
+
+    private func batchClearTags() {
+        let docs = Array(selectedDocuments)
+        for doc in docs {
+            doc.tags?.removeAll()
+            doc.modifiedAt = .now
+            doc.rebuildSearchableText()
+        }
+        try? modelContext.save()
+        NotificationCenter.default.post(name: .tagsDidChange, object: nil)
+        // Keep the selection — user might want to immediately re-tag.
     }
 
     private func batchDelete() {

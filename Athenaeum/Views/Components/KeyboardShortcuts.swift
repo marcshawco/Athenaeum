@@ -41,6 +41,7 @@ struct BatchActionToolbar: View {
     var onExport: () -> Void
     var onReprocess: () -> Void
     var onAIRename: () -> Void = {}
+    var onClearTags: () -> Void = {}
     var onDelete: () -> Void
     var onClearSelection: () -> Void
 
@@ -70,6 +71,10 @@ struct BatchActionToolbar: View {
 
                     Button(action: onReprocess) {
                         Label("Auto Tag", systemImage: "wand.and.stars")
+                    }
+
+                    Button(action: onClearTags) {
+                        Label("Clear Tags", systemImage: "tag.slash")
                     }
 
                     Button(action: onAIRename) {
