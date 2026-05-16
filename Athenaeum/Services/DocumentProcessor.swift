@@ -479,28 +479,52 @@ final class DocumentProcessor {
             let response = try await llmService.generate(
                 role: .tagger,
                 prompt: prompt,
-                maxTokens: 512,
+                maxTokens: 768,
                 temperature: 0.1
             )
-            let fallback = OfflineDocumentClassifier.classify(
-                text: text,
-                filename: document.originalFilename,
-                metadata: metadata
-            )
-            let classification = ensureUsefulTags(
-                parseClassification(response) ?? fallback,
-                fallback: fallback,
-                existingTagNames: existingTags
-            )
-            applyClassification(classification, to: document)
+            if let parsed = parseClassification(response) {
+                let classification = ensureUsefulTags(
+                    parsed,
+                    fallback: emptyClassification,
+                    existingTagNames: existingTags
+                )
+                applyClassification(classification, to: document)
+            } else {
+                // LLM ran but produced unparseable output. Don't poison
+                // the document with offline-keyword tags — leave it
+                // explicitly marked "to-review" so the user knows it
+                // needs another pass. Better silent gap than wrong data.
+                NSLog("[Athenaeum] Tagger returned unparseable JSON for \(document.originalFilename). Marking to-review. Raw response prefix: \(response.prefix(200))")
+                applyClassification(
+                    DocumentClassification(
+                        title: nil, tags: ["to-review"],
+                        correspondent: nil, date: nil, summary: nil,
+                        documentType: nil, category: nil
+                    ),
+                    to: document
+                )
+            }
         } catch {
-            let fallback = OfflineDocumentClassifier.classify(
-                text: text,
-                filename: document.originalFilename,
-                metadata: metadata
+            NSLog("[Athenaeum] Tagger threw for \(document.originalFilename): \(error.localizedDescription). Marking to-review.")
+            applyClassification(
+                DocumentClassification(
+                    title: nil, tags: ["to-review"],
+                    correspondent: nil, date: nil, summary: nil,
+                    documentType: nil, category: nil
+                ),
+                to: document
             )
-            applyClassification(fallback, to: document)
         }
+    }
+
+    /// Empty placeholder used by ensureUsefulTags when no fallback should be
+    /// merged in — keeps the "tags must come from the LLM" invariant.
+    private var emptyClassification: DocumentClassification {
+        DocumentClassification(
+            title: nil, tags: [],
+            correspondent: nil, date: nil, summary: nil,
+            documentType: nil, category: nil
+        )
     }
 
     private func parseClassification(_ response: String) -> DocumentClassification? {

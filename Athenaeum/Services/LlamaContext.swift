@@ -28,7 +28,17 @@ struct LlamaInferenceConfig: Sendable {
 
     // Static computed properties are nonisolated in Swift 6 — no global actor isolation issue.
     static var tagging: LlamaInferenceConfig {
-        tuned(LlamaInferenceConfig(maxTokens: 512, temperature: 0.1, topP: 0.95, topK: 20, repeatPenalty: 1.0))
+        // Tagging needs a larger context than chat: the prompt carries the
+        // full 500-type taxonomy, the 300-term tag pool, three few-shot
+        // examples, and 8 KB of document body. At the default 4096 the
+        // doc body was being truncated to ~nothing before the model saw
+        // it, the model produced unparseable output, and we fell through
+        // to the offline keyword classifier (the source of stray
+        // tax/lease/finance tags). 8192 fits the whole prompt with margin.
+        // Qwen 2.5 supports 32K natively so this is well within bounds.
+        var config = tuned(LlamaInferenceConfig(maxTokens: 768, temperature: 0.1, topP: 0.95, topK: 20, repeatPenalty: 1.0))
+        config.contextSize = max(config.contextSize, 8192)
+        return config
     }
 
     static var chat: LlamaInferenceConfig {
