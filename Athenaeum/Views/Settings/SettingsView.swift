@@ -270,7 +270,7 @@ struct SettingsView: View {
                 }
                 Spacer()
             }
-            Text("Changes the Dock icon and Cmd-Tab tile while ATHENS is running. The Finder icon picks the new image up on next quit/relaunch.")
+            Text("Swaps the Dock icon and Cmd-Tab tile, and persists across relaunches. The Finder icon doesn't change — macOS reads that one from the app bundle.")
                 .font(Japandi.Typography.caption)
                 .foregroundStyle(Japandi.Colors.textTertiaryFB)
                 .fixedSize(horizontal: false, vertical: true)
