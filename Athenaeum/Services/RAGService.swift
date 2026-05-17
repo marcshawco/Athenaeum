@@ -217,7 +217,7 @@ final class RAGService {
         let userContextBlock = kbContext.isEmpty ? "" : "\n\n\(kbContext)\n"
         var messages: [ChatMessage] = [
             ChatMessage(role: .system, content: """
-                You are a helpful document assistant for Athenaeum, a macOS document library app.
+                You are a helpful document assistant for ATHENS, a macOS document library app.
                 This is an ongoing chat, so use the conversation history to understand follow-up questions.
                 Answer the user's latest question using ONLY the retrieved document context below.\(userContextBlock)
 

@@ -80,7 +80,7 @@ struct OnboardingView: View {
                 .shadow(color: .black.opacity(0.12), radius: 16, x: 0, y: 8)
 
             VStack(spacing: Japandi.Spacing.xxs) {
-                Text("Athenaeum")
+                Text("ATHENS")
                     .font(.system(size: 34, weight: .light, design: .serif))
                     .foregroundStyle(Japandi.Colors.textPrimaryFB)
 
@@ -122,7 +122,7 @@ struct OnboardingView: View {
                     .font(Japandi.Typography.title)
                     .foregroundStyle(Japandi.Colors.textPrimaryFB)
 
-                Text("Athenaeum uses three specialised models")
+                Text("ATHENS uses three specialised models")
                     .font(Japandi.Typography.body)
                     .foregroundStyle(Japandi.Colors.textSecondaryFB)
             }
@@ -220,7 +220,7 @@ struct OnboardingView: View {
                     .font(Japandi.Typography.largeTitle)
                     .foregroundStyle(Japandi.Colors.textPrimaryFB)
 
-                Text("Start building your document library.\nAthenaeum will handle the rest.")
+                Text("Start building your document library.\nATHENS will handle the rest.")
                     .font(Japandi.Typography.body)
                     .foregroundStyle(Japandi.Colors.textSecondaryFB)
                     .multilineTextAlignment(.center)

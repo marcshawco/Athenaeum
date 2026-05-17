@@ -86,7 +86,7 @@ struct DocumentPreviewWindow: View {
         if availableFileData == nil && document.storedFileURL == nil {
             unavailableView(
                 title: "Original file is unavailable",
-                message: "Athenaeum has the document record, but the stored file data is missing."
+                message: "ATHENS has the document record, but the stored file data is missing."
             )
         } else if document.isPDF, let data = availableFileData, let pdf = PDFDocument(data: data) {
             PDFKitPreview(document: pdf)
@@ -143,7 +143,7 @@ struct DocumentPreviewWindow: View {
     private var unsupportedPreview: some View {
         unavailableView(
             title: "Preview is not available for this file type",
-            message: "The document is stored in Athenaeum. Open it externally to view the original file."
+            message: "The document is stored in ATHENS. Open it externally to view the original file."
         )
     }
 

@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 200" width="720" height="200">
+  <defs>
+    
+  </defs>
+  <rect class="field" width="720" height="200"></rect>
+  
+  <rect class="mark-tile" x="40" y="44" width="112" height="112" rx="25" ry="25"></rect>
+  <text class="mark-glyph" x="98" y="100" text-anchor="middle" dominant-baseline="central">A</text>
+  
+  <text class="word" x="190" y="110">ATHENS</text>
+  <text class="eyebrow" x="194" y="142">A PRIVATE ARCHIVE  ·  EST. 2025</text>
+</svg>

@@ -526,7 +526,7 @@ struct DocumentGridView: View {
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
         panel.allowedContentTypes = ContentView.importableContentTypes
-        panel.message = "Select documents to import into Athenaeum"
+        panel.message = "Select documents to import into ATHENS"
         if panel.runModal() == .OK { onImport(panel.urls) }
     }
 }

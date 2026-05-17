@@ -1,8 +1,10 @@
-# Athenaeum
+# ATHENS
 
-Athenaeum is a private, local-first macOS document library. It imports personal and business documents into a Finder-visible vault, extracts searchable text, applies local AI-assisted metadata, and lets you ask questions across the archive with on-device retrieval-augmented generation.
+ATHENS (formerly Athenaeum) is a private, local-first macOS document library. It imports personal and business documents into a Finder-visible vault, extracts searchable text, applies local AI-assisted metadata, and lets you ask questions across the archive with on-device retrieval-augmented generation.
 
 The app is built with SwiftUI, SwiftData, Vision, PDFKit, and a bundled llama.cpp framework for GGUF model inference. It is designed around the idea that sensitive documents should stay on the Mac.
+
+> **2.2.0 — rebrand to ATHENS.** All user-facing labels, the Dock display name, app icon, and brand marks now use the new identity. On-disk storage paths (the vault folder, Application Support subfolder, and bundle identifier) are unchanged so existing libraries keep working without migration.
 
 ## What It Does
 
@@ -30,14 +32,15 @@ Athenaeum/
   Assets.xcassets/            App icon, brand marks, color assets
 
 Tools/                        Standalone smoke tests for vault/import/RAG behavior
-brand/                        Source brand assets and exported icons
+ATHENS Brand/                 Current brand kit (mark, wordmark, app icons, JSX source)
+Athenaeum Brand/              Archived previous brand kit (pre-2.2.0)
 llama.xcframework/            Bundled llama.cpp framework used by the app target
-Athenaeum.xcodeproj/          Xcode project
+Athenaeum.xcodeproj/          Xcode project (target name kept for build-system stability)
 ```
 
 ## Architecture
 
-Athenaeum starts in `AthenaeumApp`, which creates the SwiftData model container for `Document` and `Tag`, registers app commands, and opens `ContentView`.
+ATHENS starts in `AthenaeumApp`, which creates the SwiftData model container for `Document` and `Tag`, registers app commands, and opens `ContentView`. (The Swift type name is unchanged to avoid a target rename; only user-facing labels were rebranded.)
 
 `ContentView` wires the core services together:
 
@@ -55,7 +58,7 @@ The UI is organized around a three-pane macOS layout: sidebar navigation, a libr
 
 ## Local Models
 
-Athenaeum looks for GGUF models in:
+ATHENS looks for GGUF models in:
 
 ```text
 ~/Library/Application Support/Athenaeum/Models
@@ -63,7 +66,7 @@ Athenaeum looks for GGUF models in:
 
 ### Hardware tiers
 
-This is a documentation app, not a benchmark — Athenaeum picks the lightest lineup that does the job well on the host Mac. `HardwareProfiler` reads `ProcessInfo.processInfo.physicalMemory` at launch and chooses a tier:
+This is a documentation app, not a benchmark — ATHENS picks the lightest lineup that does the job well on the host Mac. `HardwareProfiler` reads `ProcessInfo.processInfo.physicalMemory` at launch and chooses a tier:
 
 | Tier | RAM | Tagger + Chat | Embedding | Vision | On-disk |
 | --- | --- | --- | --- | --- | --- |
@@ -82,7 +85,7 @@ The user can override the auto-detected tier in **Settings → AI Models** (Auto
 
 ### Fallbacks and migrations
 
-Document import still works without models installed; Athenaeum falls back to native text extraction, Apple Vision OCR, and a rule-based offline classifier where possible.
+Document import still works without models installed; ATHENS falls back to native text extraction, Apple Vision OCR, and a rule-based offline classifier where possible.
 
 When the active embedder's output dimension stops matching what's persisted in the vector store, the store wipes itself on next launch and `indexExistingDocumentsIfNeeded` re-embeds the library in the background. The same flow handles tier changes that swap the embedder.
 
@@ -119,7 +122,7 @@ The `Tools/` directory contains standalone Swift smoke tests for core flows. The
 
 ## Privacy
 
-Athenaeum is intentionally local-first:
+ATHENS is intentionally local-first:
 
 - Original files live in the local document vault.
 - Metadata is stored locally with SwiftData.

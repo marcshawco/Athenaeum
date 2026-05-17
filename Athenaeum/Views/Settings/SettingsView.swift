@@ -166,7 +166,7 @@ struct SettingsView: View {
                     .shadow(color: .black.opacity(0.10), radius: 10, x: 0, y: 4)
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Athenaeum")
+                    Text("ATHENS")
                         .font(.system(size: 24, weight: .light, design: .serif))
                         .foregroundStyle(Japandi.Colors.textPrimaryFB)
                     Text("A private archive")
@@ -270,7 +270,7 @@ struct SettingsView: View {
                 }
                 Spacer()
             }
-            Text("Changes the Dock icon and Cmd-Tab tile while Athenaeum is running. The Finder icon picks the new image up on next quit/relaunch.")
+            Text("Changes the Dock icon and Cmd-Tab tile while ATHENS is running. The Finder icon picks the new image up on next quit/relaunch.")
                 .font(Japandi.Typography.caption)
                 .foregroundStyle(Japandi.Colors.textTertiaryFB)
                 .fixedSize(horizontal: false, vertical: true)
@@ -736,7 +736,7 @@ struct SettingsView: View {
                             Image(systemName: "info.circle")
                                 .font(.system(size: 10))
                                 .foregroundStyle(Japandi.Colors.textTertiaryFB)
-                            Text("No check has run yet. Athenaeum will list any documents whose vault files have gone missing.")
+                            Text("No check has run yet. ATHENS will list any documents whose vault files have gone missing.")
                                 .font(Japandi.Typography.caption)
                                 .foregroundStyle(Japandi.Colors.textTertiaryFB)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -794,7 +794,7 @@ struct SettingsView: View {
                     }
                 }
 
-                Text("This is the local super folder. Files imported through Athenaeum are copied here, and files you add in Finder are scanned and processed when the app opens.")
+                Text("This is the local super folder. Files imported through ATHENS are copied here, and files you add in Finder are scanned and processed when the app opens.")
                     .font(Japandi.Typography.caption)
                     .foregroundStyle(Japandi.Colors.textTertiaryFB)
 
@@ -949,8 +949,8 @@ struct SettingsView: View {
 
     private func chooseVaultFolder() {
         let panel = NSOpenPanel()
-        panel.title = "Choose Athenaeum Document Vault"
-        panel.message = "Choose the local folder where Athenaeum stores and watches your documents."
+        panel.title = "Choose ATHENS Document Vault"
+        panel.message = "Choose the local folder where ATHENS stores and watches your documents."
         panel.prompt = "Use This Folder"
         panel.canChooseFiles = false
         panel.canChooseDirectories = true

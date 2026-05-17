@@ -31,7 +31,7 @@ struct DocumentContextMenu: ViewModifier {
                 Button {
                     showInAppPreview = true
                 } label: {
-                    Label("View in Athenaeum", systemImage: "doc.richtext")
+                    Label("View in ATHENS", systemImage: "doc.richtext")
                 }
 
                 Button {
@@ -196,7 +196,7 @@ struct DocumentContextMenu: ViewModifier {
                     deleteDocument()
                 }
             } message: {
-                Text("This removes \"\(document.title)\" from Athenaeum. Its vault file will be moved to Trash when available.")
+                Text("This removes \"\(document.title)\" from ATHENS. Its vault file will be moved to Trash when available.")
             }
     }
 

@@ -45,7 +45,7 @@ struct HelpView: View {
             Text("Help & Tour")
                 .font(.system(size: 24, weight: .light, design: .serif))
                 .foregroundStyle(Japandi.Colors.textPrimaryFB)
-            Text("A short tour, plain-English answers, and the keyboard shortcuts that make Athenaeum sing.")
+            Text("A short tour, plain-English answers, and the keyboard shortcuts that make ATHENS sing.")
                 .font(Japandi.Typography.caption)
                 .foregroundStyle(Japandi.Colors.textTertiaryFB)
         }
@@ -68,21 +68,21 @@ struct HelpView: View {
             tourCard(
                 step: "01",
                 title: "Get your first document in",
-                blurb: "Hit ⌘I (or File ▸ Import Documents), pick a PDF, image, receipt, lease — anything in your Documents folder. Athenaeum copies it into a private vault, reads the text, summarizes it, and assigns tags. No internet involved.",
+                blurb: "Hit ⌘I (or File ▸ Import Documents), pick a PDF, image, receipt, lease — anything in your Documents folder. ATHENS copies it into a private vault, reads the text, summarizes it, and assigns tags. No internet involved.",
                 power: "Drag and drop also works anywhere on the grid. The vault lives at ~/Documents/Athenaeum Library."
             )
 
             tourCard(
                 step: "02",
                 title: "Watch a whole folder",
-                blurb: "Got a Downloads folder full of receipts? Settings ▸ Auto-Scan ▸ Add folder, point at it, and Athenaeum will quietly import anything new the moment Finder finishes writing. Drop receipts in, walk away, come back to a tagged archive.",
+                blurb: "Got a Downloads folder full of receipts? Settings ▸ Auto-Scan ▸ Add folder, point at it, and ATHENS will quietly import anything new the moment Finder finishes writing. Drop receipts in, walk away, come back to a tagged archive.",
                 power: "Backed by FSEventStream with a 2.5 s debounce and a path+mtime fingerprint so the same file isn't reimported on every save."
             )
 
             tourCard(
                 step: "03",
                 title: "Ask your library a question",
-                blurb: "Click Document Chat in the sidebar and try \u{201C}how much did I spend on the Tokyo trip?\u{201D} or \u{201C}what's the renewal date on my lease?\u{201D}. Athenaeum finds the relevant passages from your documents and writes an answer with citations.",
+                blurb: "Click Document Chat in the sidebar and try \u{201C}how much did I spend on the Tokyo trip?\u{201D} or \u{201C}what's the renewal date on my lease?\u{201D}. ATHENS finds the relevant passages from your documents and writes an answer with citations.",
                 power: "Vector embeddings + cosine similarity. The Sources panel and each assistant turn's \u{201C}N sources used\u{201D} disclosure shows exactly which chunks the model saw."
             )
 
@@ -103,7 +103,7 @@ struct HelpView: View {
             calloutCard(
                 icon: "lock.shield",
                 title: "Everything stays local",
-                body: "Nothing leaves your Mac. The models run on-device, files live in a Finder folder you control, and the only network calls Athenaeum makes are when you click Download in Model Status. The status bar at the bottom says \u{201C}local · private\u{201D} for a reason."
+                body: "Nothing leaves your Mac. The models run on-device, files live in a Finder folder you control, and the only network calls ATHENS makes are when you click Download in Model Status. The status bar at the bottom says \u{201C}local · private\u{201D} for a reason."
             )
         }
     }
@@ -128,16 +128,16 @@ struct HelpView: View {
         [
             FAQEntry(
                 q: "Is any of my data sent to a server?",
-                a: "No. Every model runs on your Mac. Documents, chats, tags, embeddings — all of it sits inside your sandboxed Application Support folder and your chosen vault. The only network requests Athenaeum makes are when you press Download in Model Status to fetch the open-source models from Hugging Face.",
+                a: "No. Every model runs on your Mac. Documents, chats, tags, embeddings — all of it sits inside your sandboxed Application Support folder and your chosen vault. The only network requests ATHENS makes are when you press Download in Model Status to fetch the open-source models from Hugging Face.",
                 d: "Sandbox entitlements limit access to user-selected folders. App Transport Security is on. Outbound calls hit huggingface.co only during a download."
             ),
             FAQEntry(
                 q: "Where do my files actually live?",
-                a: "Originals go in ~/Documents/Athenaeum Library (visible in Finder). You can pick a different folder in Settings ▸ Storage. Stuff Athenaeum derives — text extracted from PDFs, the search index, AI summaries — lives in ~/Library/Application Support/Athenaeum.",
+                a: "Originals go in ~/Documents/Athenaeum Library (visible in Finder). You can pick a different folder in Settings ▸ Storage. Stuff ATHENS derives — text extracted from PDFs, the search index, AI summaries — lives in ~/Library/Application Support/Athenaeum.",
                 d: "Vault path is persisted as a security-scoped bookmark. Reset to default clears stale ones. Vector store: ~/Library/Application Support/Athenaeum/vector_store.json."
             ),
             FAQEntry(
-                q: "Why did Athenaeum tag my document wrong?",
+                q: "Why did ATHENS tag my document wrong?",
                 a: "Local AI is good but not perfect. Click the document, hit the chevron next to the type pill, and pick the right type from the 500-type list. The next time you reprocess, the model learns from the broader set of corrected examples — but more practically, your override sticks immediately.",
                 d: "Override stored as Document.documentTypeSlug + categorySlug. Searchable text is rebuilt so search and \u{201C}By Category\u{201D} reflect it instantly."
             ),
@@ -148,12 +148,12 @@ struct HelpView: View {
             ),
             FAQEntry(
                 q: "Can I import a whole folder at once?",
-                a: "Yes — two ways. File ▸ Scan Folder for Import (⇧⌘I) walks a folder once and imports everything that matches. Settings ▸ Auto-Scan adds a folder that gets watched forever, so new files appear in Athenaeum without you doing anything.",
+                a: "Yes — two ways. File ▸ Scan Folder for Import (⇧⌘I) walks a folder once and imports everything that matches. Settings ▸ Auto-Scan adds a folder that gets watched forever, so new files appear in ATHENS without you doing anything.",
                 d: "Recursive enumerator with .skipsHiddenFiles + .skipsPackageDescendants. Allow-list defined in AutoScanCoordinator.supportedExtensions."
             ),
             FAQEntry(
                 q: "What if I delete a document by accident?",
-                a: "The vault file is moved to Trash, so you can drag it back. The Athenaeum record (tags, summary, embeddings) is gone unless you reimport — at which point a fresh pipeline runs.",
+                a: "The vault file is moved to Trash, so you can drag it back. The ATHENS record (tags, summary, embeddings) is gone unless you reimport — at which point a fresh pipeline runs.",
                 d: "Delete path: FileManager.trashItem + modelContext.delete + ragService.removeDocument(id:). Embeddings are dropped from the vector store on delete."
             ),
             FAQEntry(
@@ -168,7 +168,7 @@ struct HelpView: View {
             ),
             FAQEntry(
                 q: "What's that green pill under each document title?",
-                a: "That's Athenaeum's best guess at what kind of document it is, based on the 500-type reference taxonomy (Lease Agreement, Marriage Certificate, IRS Form 1040, etc.). Click it to confirm or change.",
+                a: "That's ATHENS's best guess at what kind of document it is, based on the 500-type reference taxonomy (Lease Agreement, Marriage Certificate, IRS Form 1040, etc.). Click it to confirm or change.",
                 d: "DocumentTaxonomy.allTypes — 500 entries × 20 categories, anchored to a markdown reference guide."
             ),
             FAQEntry(
@@ -183,7 +183,7 @@ struct HelpView: View {
             ),
             FAQEntry(
                 q: "Can I use my own models?",
-                a: "Yes. Drop any GGUF file into ~/Library/Application Support/Athenaeum/Models with the expected filename and Athenaeum will pick it up on next launch. Model Status → Reveal in Finder gets you there in one click.",
+                a: "Yes. Drop any GGUF file into ~/Library/Application Support/Athenaeum/Models with the expected filename and ATHENS will pick it up on next launch. Model Status → Reveal in Finder gets you there in one click.",
                 d: "Filenames: Qwen2.5-14B-Instruct-Q4_K_M.gguf (tagger + chat) · nomic-embed-text-v1.5.Q4_K_M.gguf (embeddings) · ggml-model-Q4_K_M.gguf (MiniCPM-V)."
             ),
         ]
@@ -240,7 +240,7 @@ struct HelpView: View {
                 )
                 bulletRow(
                     title: "Vault integrity check",
-                    body: "Settings ▸ Storage ▸ Integrity verifies every document's file is where Athenaeum thinks it is, and lists any orphans."
+                    body: "Settings ▸ Storage ▸ Integrity verifies every document's file is where ATHENS thinks it is, and lists any orphans."
                 )
                 bulletRow(
                     title: "Hide ugly tags",

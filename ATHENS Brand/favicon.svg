@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    
+  </defs>
+  <rect class="field" width="64" height="64" rx="14" ry="14"></rect>
+  <text class="glyph" x="33" y="31" text-anchor="middle" dominant-baseline="central">A</text>
+</svg>

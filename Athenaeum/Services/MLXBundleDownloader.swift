@@ -30,7 +30,7 @@ final class MLXBundleDownloader {
         cfg.timeoutIntervalForRequest = 60
         cfg.timeoutIntervalForResource = 7200
         cfg.httpAdditionalHeaders = [
-            "User-Agent": "Athenaeum/1.0 (+local)"
+            "User-Agent": "ATHENS/1.0 (+local)"
         ]
         return URLSession(configuration: cfg)
     }()

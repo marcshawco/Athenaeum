@@ -382,7 +382,7 @@ struct SidebarView: View {
                         .clipShape(RoundedRectangle(cornerRadius: Japandi.Radius.sm, style: .continuous))
 
                     VStack(alignment: .leading, spacing: 1) {
-                        Text("Athenaeum")
+                        Text("ATHENS")
                             .font(.system(size: 13, weight: .medium, design: .serif))
                             .foregroundStyle(Japandi.Colors.textPrimaryFB)
 

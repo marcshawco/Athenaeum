@@ -34,7 +34,7 @@ struct AutoScanSettingsView: View {
             }
             Button("Cancel", role: .cancel) { removeTarget = nil }
         } message: { folder in
-            Text("Documents already imported from \(folder.path) stay in Athenaeum. The folder itself is left untouched.")
+            Text("Documents already imported from \(folder.path) stay in ATHENS. The folder itself is left untouched.")
         }
     }
 
@@ -45,7 +45,7 @@ struct AutoScanSettingsView: View {
             Text("Auto-Scan Folders")
                 .font(.system(size: 24, weight: .light, design: .serif))
                 .foregroundStyle(Japandi.Colors.textPrimaryFB)
-            Text("Athenaeum continuously watches these folders. Anything dropped in is imported, tagged, and indexed automatically.")
+            Text("ATHENS continuously watches these folders. Anything dropped in is imported, tagged, and indexed automatically.")
                 .font(Japandi.Typography.caption)
                 .foregroundStyle(Japandi.Colors.textTertiaryFB)
                 .fixedSize(horizontal: false, vertical: true)
@@ -82,7 +82,7 @@ struct AutoScanSettingsView: View {
             Text("No folders being watched")
                 .font(Japandi.Typography.body)
                 .foregroundStyle(Japandi.Colors.textSecondaryFB)
-            Text("Click \u{201C}Add folder\u{2026}\u{201D} to start a watcher. Athenaeum will scan the folder once on launch, then again whenever Finder writes to it.")
+            Text("Click \u{201C}Add folder\u{2026}\u{201D} to start a watcher. ATHENS will scan the folder once on launch, then again whenever Finder writes to it.")
                 .font(Japandi.Typography.caption)
                 .foregroundStyle(Japandi.Colors.textTertiaryFB)
                 .multilineTextAlignment(.center)
@@ -182,7 +182,7 @@ struct AutoScanSettingsView: View {
     private func pickFolder() {
         let panel = NSOpenPanel()
         panel.title = "Choose a folder to watch"
-        panel.message = "Athenaeum will auto-import documents added to this folder."
+        panel.message = "ATHENS will auto-import documents added to this folder."
         panel.prompt = "Watch this folder"
         panel.canChooseFiles = false
         panel.canChooseDirectories = true

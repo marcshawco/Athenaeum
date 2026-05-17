@@ -426,7 +426,7 @@ enum TaggingPrompts {
         let body = String(text.prefix(8000))
 
         return """
-        You are Athenaeum's document filing assistant. Tag the document below.
+        You are ATHENS's document filing assistant. Tag the document below.
 
         THE ONE RULE that overrides everything else:
         EVERY tag must point to a specific phrase you can quote from the document. If a single mention of the word "tax" is the only thing supporting a `tax` tag, do NOT use it. Tags describe what the document IS, not topics the document casually mentions.
@@ -494,7 +494,7 @@ enum TaggingPrompts {
         let categoryHint = category.map { "Known category: \($0)\n" } ?? ""
 
         return """
-        You are Athenaeum's file-naming assistant. Propose a clean, descriptive filename for the document below. The user is trying to replace a junk name like "Scanned Document (2).pdf" with something they can find in Finder six months from now.
+        You are ATHENS's file-naming assistant. Propose a clean, descriptive filename for the document below. The user is trying to replace a junk name like "Scanned Document (2).pdf" with something they can find in Finder six months from now.
 
         \(typeHint)\(categoryHint)Current filename: \(originalFilename)
 

@@ -740,7 +740,7 @@ struct ContentView: View {
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
         panel.allowedContentTypes = Self.importableContentTypes
-        panel.message = "Select documents to import into Athenaeum"
+        panel.message = "Select documents to import into ATHENS"
         panel.directoryURL = DocumentVaultService.shared.vaultURL
 
         if panel.runModal() == .OK {
