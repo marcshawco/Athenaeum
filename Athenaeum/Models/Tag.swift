@@ -26,255 +26,109 @@ extension Tag {
         "C7F3FF",
     ]
 
-    /// Built-in vocabulary for document classification. These tags are used as
-    /// a pool for AI/fallback tagging and are only created in the library when
-    /// a document actually receives them.
+    /// Broad domain anchors for document classification.
+    ///
+    /// History note: this pool used to be ~1,100 narrow slugs across every
+    /// niche subdomain we could think of (every medical specialty, every
+    /// crypto coin, every programming language). It was load-bearing — the
+    /// tagger validator strictly rejected anything outside this list, so
+    /// missing a domain meant documents in that domain came back tagged
+    /// only "to-review".
+    ///
+    /// As of v2.5.0 the validator in `DocumentProcessor.ensureUsefulTags`
+    /// is permissive: anything in this pool OR any well-formed slug the
+    /// model invents (lowercase alphanumeric with hyphens, 2–40 chars,
+    /// no leading/trailing/doubled hyphens) is accepted. That means the
+    /// pool's job is no longer "all valid tags" — it's "anchor terminology
+    /// the model should prefer." When the user files a fitness PDF, we
+    /// want the model to pick `fitness` rather than `workouts-and-stuff`,
+    /// so we anchor `fitness`. The model then composes specific tags from
+    /// the anchor (`fitness-plan`, `fitness-progress`) that pass through.
+    ///
+    /// One or two anchors per real-world filing domain is plenty. Don't
+    /// fall into the trap of adding `tennis`, `basketball`, `soccer` —
+    /// `sports` is the anchor; the model will compose the rest. Same for
+    /// every other "300 slugs per sector" temptation.
     static let builtInPool: [String] = [
         // Identity & legal
-        "identity", "passport", "drivers-license", "social-security", "birth-certificate", "marriage-certificate", "divorce", "adoption",
-        "citizenship", "visa", "immigration", "address", "contact", "emergency-contact", "beneficiary", "estate",
-        "will", "trust", "power-of-attorney", "notary", "legal", "court", "attorney", "claim",
-        "settlement", "affidavit", "subpoena", "judgment", "permit", "license",
-        // Medical
-        "medical", "dental", "vision", "prescription", "pharmacy", "lab-results", "imaging", "vaccination",
-        "insurance-card", "benefits", "explanation-of-benefits", "diagnosis", "treatment", "referral",
-        "provider", "patient", "health-record", "therapy", "mental-health", "veterinary", "pet",
+        "identity", "legal", "contract", "court", "estate", "license", "permit",
+        // Health & medical
+        "health", "medical", "mental-health", "prescription", "veterinary",
         // Financial
-        "bank-statement", "checking", "savings", "credit-card", "debit-card", "transaction", "deposit",
-        "withdrawal", "transfer", "loan", "mortgage", "refinance", "interest", "investment", "brokerage",
-        "retirement", "ira", "401k", "pension", "dividend", "statement", "budget", "expense", "receipt",
-        "invoice", "bill", "payment", "refund", "reimbursement",
-        // Tax
-        "tax", "w-2", "1099", "1040", "schedule-c", "deduction", "charitable-donation", "property-tax",
-        "sales-tax", "payroll-tax", "estimated-tax", "tax-return", "tax-notice", "irs",
-        // Accounting / business operations
-        "bookkeeping", "accounting", "ledger", "balance-sheet", "profit-loss", "cash-flow",
-        "accounts-payable", "accounts-receivable", "payroll", "paystub", "timesheet",
+        "financial", "banking", "credit", "loan", "mortgage", "investment",
+        "retirement", "tax", "receipt", "invoice", "payment", "budget", "statement",
         // Employment & HR
-        "contractor", "employee", "offer-letter", "onboarding", "handbook", "performance-review", "termination",
-        "resume", "cv", "cover-letter", "reference-check", "background-check", "job-description",
-        "compensation", "equity-grant", "stock-options", "severance", "non-compete", "career",
+        "employment", "resume", "payroll", "contractor",
         // Education
-        "training", "certification", "transcript", "diploma", "tuition", "scholarship", "financial-aid",
-        "student-loan", "school", "education", "course", "credit", "credit-transfer", "curriculum",
-        "academic", "university", "college", "syllabus", "prerequisite", "articulation", "enrollment",
-        "registration-form", "academic-record", "degree-plan",
-        // Contracts
-        "contract", "agreement", "nda", "statement-of-work", "proposal", "quote", "estimate", "purchase-order",
-        "work-order", "change-order", "scope", "deliverables", "milestone", "invoice-terms", "signature",
-        "signed", "renewal", "amendment", "addendum", "termination-clause",
+        "education", "school", "course", "certification", "transcript",
         // Real estate & property
-        "lease", "rent", "tenant", "landlord", "property", "real-estate", "deed", "title", "appraisal", "inspection",
+        "real-estate", "property", "lease", "deed", "hoa", "home-improvement",
         // Insurance
-        "insurance", "auto-insurance", "home-insurance", "renters-insurance", "life-insurance",
-        "business-insurance", "policy", "premium", "deductible", "coverage", "accident", "repair",
-        "warranty", "service-record", "maintenance",
+        "insurance", "policy", "claim", "warranty",
         // Vehicle
-        "vehicle", "registration", "vin", "title-transfer", "parking", "toll", "ticket",
+        "vehicle", "registration",
         // Utilities & subscriptions
-        "utilities", "electric", "gas", "water", "internet", "phone", "mobile", "subscription",
-        "membership", "cancellation", "account", "login", "password", "confirmation", "receipt-email",
+        "utilities", "subscription", "membership",
         // Correspondence
-        "correspondence", "letter", "email", "memo", "notice", "reminder", "invitation", "announcement", "newsletter",
+        "correspondence", "letter", "email", "notice",
         // Business / marketing
-        "application", "business-plan", "marketing", "advertising", "brand", "branding", "brand-strategy",
-        "marketing-strategy", "content-strategy", "pr", "campaign", "creative-brief", "pitch-deck",
-        "case-study", "sales", "client", "customer", "lead", "vendor", "supplier", "partner",
+        "business", "marketing", "branding", "sales", "client", "vendor",
         // Project / meetings
-        "project", "meeting-notes", "agenda", "minutes", "report", "presentation", "spreadsheet",
-        "dashboard", "analytics", "kpi", "okr", "roadmap",
+        "project", "meeting-notes", "report", "presentation", "spreadsheet", "roadmap",
         // Operations / logistics
-        "inventory", "shipping", "delivery", "packing-slip", "bill-of-lading", "order", "fulfillment",
-        "return", "rma", "procurement", "manufacturing", "operations",
-        // Retail / hospitality / service industry / fashion
-        "retail", "merchandising", "store-operations", "point-of-sale", "ecommerce",
-        "hospitality", "hotel-operations", "front-desk", "concierge", "housekeeping",
-        "restaurant", "food-service", "menu", "kitchen-operations",
-        "fashion", "apparel", "luxury", "streetwear", "footwear", "accessories",
-        // Food / cooking / nutrition / wellness / fitness
-        "recipe", "ingredients", "cooking", "baking", "meal-plan", "meal-prep",
-        "dessert", "entree", "appetizer", "beverage", "snack", "dietary-restrictions",
-        "nutrition", "protein", "supplement", "calories", "macros",
-        "health", "wellness", "fitness", "workout", "exercise", "diet", "weight-loss",
-        // Security / safety
-        "compliance", "procedure", "standard-operating-procedure", "audit", "safety", "incident",
-        "security", "loss-prevention", "asset-protection", "investigation", "surveillance",
-        "access-control", "privacy", "data", "gdpr", "hipaa", "accessibility", "risk", "assessment", "checklist",
+        "operations", "shipping", "inventory", "procurement", "manufacturing",
+        // Retail / hospitality / fashion / food
+        "retail", "hospitality", "restaurant", "fashion",
+        "food", "recipe", "cooking", "nutrition",
+        // Fitness / wellness
+        "fitness", "wellness", "workout",
+        // Security / compliance
+        "security", "compliance", "audit", "privacy", "safety",
         // Forms / templates
-        "form", "template", "manual", "guide", "instructions", "specification", "requirements",
+        "form", "template", "manual", "guide", "checklist",
         // Research / writing
-        "research", "article", "whitepaper", "essay", "analysis", "thesis", "literature-review",
-        // Software / engineering / design
-        "software", "engineering", "code", "documentation", "api", "architecture", "release-notes",
-        "bug-report", "feature-spec", "design", "ux", "ui", "wireframe", "prototype", "style-guide",
+        "research", "article", "whitepaper", "essay", "writing",
+        // Software / engineering
+        "software", "engineering", "code", "api", "design", "ui", "ux", "devops", "ai",
         // Travel
-        "travel", "itinerary", "boarding-pass", "flight", "hotel", "reservation", "rental-car",
-        "passport-copy", "visa-copy",
-        // Events
-        "event", "conference", "workshop", "mileage", "per-diem",
+        "travel", "itinerary", "flight", "hotel", "reservation", "vacation",
+        // Events / life moments
+        "event", "conference", "wedding", "birthday", "graduation", "funeral", "anniversary",
         // Home / family
-        "home", "household", "moving", "storage", "renovation", "contractor-bid", "blueprint", "floor-plan",
-        "hoa", "mortgage-statement", "escrow", "utilities-bill", "family", "childcare", "daycare", "eldercare", "consent-form",
-        // Parenting & school
-        "parenting", "babysitter", "nanny", "school-form", "permission-slip", "field-trip", "parent-teacher-conference",
-        "report-card", "well-child-visit", "growth-chart", "milestone", "baby", "infant", "toddler", "teenager",
-        "allowance", "chore-chart", "preschool", "kindergarten", "elementary-school", "middle-school", "high-school",
-        "college-application", "fafsa", "scholarship-application", "school-supplies",
-        // Medical specialties & care types
-        "cardiology", "neurology", "oncology", "dermatology", "pediatrics", "geriatrics", "psychiatry", "psychology",
-        "orthopedics", "urology", "gastroenterology", "endocrinology", "ophthalmology", "ent", "podiatry",
-        "obgyn", "fertility", "pregnancy", "prenatal", "postpartum", "ultrasound", "birth-plan", "newborn",
-        "surgery", "surgical-consent", "pre-op", "post-op", "anesthesia", "recovery-plan",
-        "physical-therapy", "occupational-therapy", "speech-therapy", "rehabilitation",
-        "emergency-room", "urgent-care", "primary-care", "telehealth", "specialist-visit", "second-opinion",
-        "medication-list", "prescription-refill", "side-effects", "drug-interaction",
-        "counseling", "therapy-session", "anxiety", "depression", "stress-management", "sleep-study",
-        "hearing-test", "eye-exam", "blood-test", "biopsy", "mri", "x-ray", "ct-scan", "mammogram", "colonoscopy",
-        "advance-directive", "living-will", "do-not-resuscitate",
-        // Personal finance deep
-        "emergency-fund", "savings-goal", "investment-portfolio", "asset-allocation", "diversification",
-        "etf", "mutual-fund", "index-fund", "stock", "bond", "options-trading", "futures",
-        "dividend-reinvestment", "capital-gains", "tax-loss-harvesting", "roth-conversion",
-        "529-plan", "hsa", "fsa", "hra", "deferred-compensation",
-        "credit-score", "credit-report", "fico", "debt-management", "debt-consolidation",
-        "balance-transfer", "credit-utilization", "hard-inquiry", "soft-inquiry",
-        "net-worth", "financial-plan", "retirement-projection", "social-security-statement",
-        "estate-plan", "inheritance", "probate", "executor", "guardianship",
-        "annuity", "whole-life", "term-life", "umbrella-policy",
-        // Crypto / fintech
-        "crypto", "bitcoin", "ethereum", "stablecoin", "altcoin", "nft", "defi",
-        "blockchain", "smart-contract", "wallet-address", "seed-phrase", "private-key", "public-key",
-        "hardware-wallet", "exchange-statement", "crypto-tax", "yield-farming", "staking", "mining",
-        // Government & civic
-        "government", "federal", "state", "local", "municipal", "county",
-        "election", "voting", "ballot", "voter-registration", "polling-place",
-        "campaign", "candidate", "debate", "primary-election", "general-election",
-        "building-permit", "zoning", "code-enforcement", "occupancy-permit", "certificate-of-occupancy",
-        "jury-duty", "warrant", "citation", "fine", "summons",
-        "legislation", "statute", "regulation", "ordinance",
-        "military", "veteran", "va-benefits", "dd-214", "deployment-orders", "discharge-papers",
-        "social-services", "snap", "wic", "tanf", "unemployment-benefits", "disability-claim",
-        "census", "tax-id", "ein",
-        // Sports, recreation, outdoor
-        "sports", "athletics", "baseball", "basketball", "football", "soccer", "hockey", "tennis",
-        "golf", "swimming", "running", "cycling", "triathlon", "marathon", "5k",
-        "yoga", "pilates", "martial-arts", "boxing", "wrestling", "climbing", "bouldering",
-        "skating", "skiing", "snowboarding", "surfing", "sailing", "fishing", "hunting",
-        "camping", "hiking", "backpacking", "trail-run", "kayaking", "canoeing",
-        "team", "league", "tournament", "championship", "playoff", "season-pass",
-        "roster", "stats", "scorecard", "scouting-report", "training-camp",
-        "gym-membership", "personal-trainer", "trainer-session", "fitness-plan",
-        // Arts & creative
-        "art", "artwork", "painting", "sculpture", "drawing", "illustration", "sketch", "portfolio",
-        "gallery", "museum", "exhibition", "art-history", "art-criticism", "art-supplies",
-        "photography", "photo", "photographer", "photo-shoot", "photo-album", "raw-file",
-        "lens", "camera", "lightroom", "photoshop",
-        "music", "song", "album", "playlist", "concert", "lyrics", "sheet-music",
-        "music-theory", "instrument", "guitar", "piano", "drums", "vocals",
-        "recording", "mixing", "mastering", "songwriting", "composition", "arrangement",
-        "musician", "band", "orchestra", "choir",
-        "film", "video", "screenplay", "script", "storyboard", "treatment",
-        "cinematography", "editing", "post-production", "vfx", "color-grade", "sound-design",
-        "voice-over", "podcast", "livestream", "vlog", "youtube-channel", "tiktok",
-        "writing", "novel", "short-story", "poetry", "memoir", "blog", "manuscript", "draft",
-        "literary-agent", "publishing", "isbn", "copyright", "trademark",
-        "graphic-design", "typography", "logo-design", "color-palette", "mood-board", "packaging-design",
-        // Books / publishing / reading
-        "book", "non-fiction", "fiction", "biography", "autobiography", "self-help-book",
-        "audiobook", "ebook", "kindle", "library-book", "book-club", "reading-list", "book-review",
-        "chapter", "foreword", "preface", "afterword", "index", "glossary", "bibliography",
-        "self-published", "manuscript-submission",
-        // News / journalism / politics
-        "news", "news-article", "op-ed", "editorial", "press-release", "news-clipping",
-        "interview", "press-kit", "politics", "advocacy", "petition", "lobbying",
-        // Science & technical
-        "science", "biology", "chemistry", "physics", "astronomy", "geology", "meteorology",
-        "experiment", "lab-notebook", "data-analysis", "hypothesis", "methodology", "peer-review",
-        "math", "statistics", "geometry", "algebra", "calculus", "equation", "formula",
-        "engineering-disc", "mechanical", "electrical", "civil", "chemical", "aerospace",
-        "patent", "prior-art", "invention", "prototype-spec",
-        // Software / programming / cloud / DevOps / AI
-        "programming", "python", "javascript", "typescript", "swift", "java", "rust", "go-lang",
-        "kotlin", "cpp", "csharp", "ruby", "php", "sql", "html", "css", "shell-script",
-        "framework", "library", "package", "dependency", "semver", "changelog",
-        "database", "postgres", "mysql", "mongodb", "redis", "sqlite",
-        "cloud", "aws", "azure", "gcp", "kubernetes", "docker", "container", "microservice",
-        "devops", "ci-cd", "github-actions", "deployment", "rollback",
-        "monitoring", "alerting", "observability", "logging",
-        "pen-test", "vulnerability", "cve", "sast", "dast", "incident-response",
-        "ai", "machine-learning", "deep-learning", "neural-network", "llm", "fine-tune",
-        "training-data", "embedding", "model-card", "evaluation",
-        "mobile-dev", "ios-dev", "android-dev", "react-native", "flutter", "swiftui",
-        "frontend", "backend", "fullstack", "rest-api", "graphql", "webhook", "websocket",
+        "home", "household", "family", "parenting", "childcare",
+        // Government / civic
+        "government", "election", "military", "veteran",
+        // Sports / recreation
+        "sports", "hiking", "camping", "fishing", "gaming",
+        // Arts / creative
+        "art", "photography", "music", "film", "graphic-design", "podcast",
+        // Books / reading
+        "book",
+        // News / journalism
+        "news", "press-release",
+        // Science
+        "science", "math",
         // Construction / trades / DIY
-        "construction", "general-contractor", "subcontractor", "plumber", "electrician", "carpenter",
-        "painter", "roofer", "hvac-tech", "mason", "tiler", "drywaller",
-        "bid", "punch-list", "draw-schedule", "lien-waiver", "material-receipt",
-        "lumber", "drywall", "concrete", "paint-spec", "fixtures",
-        "diy", "home-improvement", "remodel", "addition", "extension",
-        "landscape", "garden", "lawn-care", "irrigation", "fence-install", "deck",
-        // Energy & sustainability
-        "solar", "solar-panel", "solar-permit", "energy-audit", "energy-efficiency", "weatherization",
-        "electric-vehicle", "ev-charging", "charging-station",
-        "recycling", "composting", "sustainability", "eco-friendly", "carbon-footprint",
-        "renewable", "wind", "hydro", "geothermal", "net-metering",
-        // Vehicle deep
-        "car", "truck", "suv", "motorcycle", "rv", "boat", "trailer",
-        "car-loan-statement", "car-payment", "oil-change", "tire-rotation", "brake-service", "tune-up",
-        "gas-receipt", "ev-charging-receipt", "smog-check", "emissions",
-        "accident-report", "police-report", "traffic-violation", "dui", "moving-violation",
-        // Travel deep
-        "vacation", "business-trip", "weekend-getaway", "road-trip", "day-trip",
-        "cruise", "ferry", "train-ticket", "bus-ticket", "ride-share",
-        "airbnb", "vrbo", "hostel", "resort", "all-inclusive",
-        "destination", "packing-list", "passport-renewal",
-        "currency-exchange", "travel-insurance", "lounge-pass",
-        "frequent-flyer", "points", "miles", "loyalty-program", "tsa-precheck", "global-entry",
-        // Events & life moments
-        "birthday", "anniversary", "wedding", "wedding-invitation", "engagement", "rsvp",
-        "funeral", "memorial", "baptism", "graduation", "retirement-party",
-        "gift", "gift-card", "thank-you-note", "condolence", "sympathy-card",
-        "volunteer", "donation-receipt", "fundraiser", "philanthropy",
+        "construction", "diy", "plumbing", "electrical", "landscape",
+        // Energy / sustainability
+        "solar", "renewable", "sustainability",
         // Beauty / personal care
-        "beauty", "skincare", "makeup", "hair-care", "nail-care", "fragrance",
-        "spa", "salon", "barber", "manicure", "pedicure", "massage-therapy", "facial",
-        "cosmetics", "esthetician",
-        // Pets & animals deep
-        "dog", "cat", "bird", "fish-pet", "reptile", "exotic-pet",
-        "pet-insurance", "pet-license", "microchip", "pet-food", "grooming",
-        "pet-training", "pet-daycare", "pet-sitter", "kennel", "boarding",
-        "rescue", "shelter", "foster",
-        // Gaming / entertainment
-        "gaming", "video-game", "board-game", "card-game", "tabletop", "rpg", "mmo",
-        "streaming-service", "movie", "tv-show", "episode", "season",
-        "console", "pc-gaming", "vr", "augmented-reality",
-        // Productivity / organization / personal development
-        "todo", "task-list", "kanban", "sprint", "backlog", "retrospective", "standup",
-        "one-on-one", "okrs", "kpis", "action-items", "decision-log",
-        "filing-system", "archive-box", "inbox-zero", "label-system",
-        "self-help", "personal-development", "journal-entry", "gratitude-journal",
-        "meditation", "mindfulness", "affirmation", "habit-tracker", "goal-setting",
+        "beauty", "skincare",
+        // Pets / animals
+        "pet", "dog", "cat",
+        // Productivity / personal development
+        "productivity", "todo", "journal", "meditation", "habit",
         // Religious / spiritual
-        "spiritual", "prayer-list", "sermon-notes", "scripture", "devotional",
-        "bible-study", "religious-record", "church-membership",
-        // Languages / writing services
-        "translation", "transcription", "captioning", "subtitle",
-        "proofreading", "copyediting", "technical-writing", "content-writing", "ghostwriting",
-        "localization", "i18n", "style-guide-writing",
+        "spiritual", "religious",
+        // Languages / translation
+        "translation", "localization",
         // Home goods / shopping
-        "furniture", "appliance", "electronics-product", "home-decor", "lighting-fixture",
-        "smart-home", "security-system", "alarm-system",
-        "warranty-card", "product-manual", "user-guide", "instructions-product",
-        // Mailing / shipping deep
-        "tracking-number", "shipping-label", "customs-form", "international-shipping",
-        "return-label", "rma-form", "post-office", "po-box",
-        // Misc but useful
-        "summary-doc", "outline", "draft-doc", "final-draft", "redline", "markup",
-        "comparison", "benchmark", "competitive-analysis", "market-research",
-        "survey", "questionnaire", "feedback", "testimonial",
-        "press-photo", "headshot", "professional-photo",
-        // Status flags
-        "urgent", "to-review", "follow-up", "paid", "unpaid", "overdue", "pending", "approved", "confidential",
-        "draft", "final", "archived", "in-progress", "blocked", "done", "needs-signature", "expired", "active"
+        "furniture", "appliance", "electronics", "smart-home",
+        // Crypto / fintech
+        "crypto", "blockchain", "nft",
+        // Status flags (used by UI filters as well as tagging)
+        "urgent", "to-review", "follow-up", "paid", "unpaid", "overdue",
+        "pending", "approved", "confidential", "draft", "final", "archived",
+        "in-progress", "blocked", "done", "needs-signature", "expired", "active",
     ]
 }

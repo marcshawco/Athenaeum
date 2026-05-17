@@ -541,7 +541,7 @@ enum TaggingPrompts {
         - "title": 4-8 word descriptive title. Prefer the document's own title.
         - "document_type": the single most specific slug from the TAXONOMY that describes what the document IS. kebab-case, exactly as listed. null if nothing fits — do not invent.
         - "category": the parent category slug of the chosen document_type. null only if document_type is null.
-        - "tags": 2-5 tag slugs from the SUPPORTING TAG POOL. Each one MUST be the primary subject of the document, not a side mention. Prefer fewer accurate tags over more tags.
+        - "tags": 2-5 tag slugs. Prefer slugs from the SUPPORTING TAG POOL below — those are the anchors we want for consistency. If nothing in the pool fits a primary subject, coin a new slug yourself, but use the pool's terminology where it applies (e.g. `health-checkup` not `medical-appointment` when `health` is the anchor). Each tag MUST be the primary subject of the document, not a side mention. Prefer fewer accurate tags over more.
         - "correspondent": author/sender/issuing org if clearly identifiable, else null.
         - "date": document date in YYYY-MM-DD if EXPLICITLY written, else null. Do not infer.
         - "summary": 1-2 sentence plain description of what this document is.
@@ -549,8 +549,14 @@ enum TaggingPrompts {
         DOCUMENT TAXONOMY (pick document_type from these slugs; pick category from the category slug at the start of each line):
         \(taxonomy)
 
-        SUPPORTING TAG POOL (use ONLY these for the "tags" array — anything outside this list will be discarded):
+        SUPPORTING TAG POOL (broad anchors — prefer these for consistency, but you may coin a new well-formed slug if a primary subject isn't anchored here):
         [\(tagList)]
+
+        SLUG SHAPE (applies to any tag you coin yourself, not the pool):
+        - lowercase ASCII, words separated by single hyphens
+        - 2 to 40 characters
+        - no leading/trailing/doubled hyphens
+        - at least one letter (no digit-only slugs)
 
         EXAMPLES (note how the tags describe the document's identity, never side mentions):
 
@@ -566,7 +572,7 @@ enum TaggingPrompts {
         HARD RULES:
         - Specificity beats vagueness — "lease-agreement" not "contract" when it's a lease; "irs-form-1040" not "tax" when it's a 1040.
         - Never tag based on filename or extension. Only the document body counts.
-        - Never invent tags. If the right tag isn't in the SUPPORTING TAG POOL, leave it out.
+        - Prefer pool tags. Coin a new slug only when no pool tag describes a primary subject of the document, and keep it broad rather than micro (e.g. `network-security` not `network-security-implementation-best-practices`).
         - When in doubt, return FEWER tags. Two accurate tags beat five mixed ones.
         - If the document is too short/generic to classify, return null for document_type/category and only the most defensible tags.
         - Respond with ONLY valid JSON. No markdown fences, no explanation, no trailing commas.
