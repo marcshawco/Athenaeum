@@ -47,7 +47,7 @@ final class BatchProcessor {
             }
         }
 
-        try? modelContext.save()
+        modelContext.persist(context: "batch-add-tag")
         progress = 1.0
     }
 
@@ -71,7 +71,7 @@ final class BatchProcessor {
             doc.rebuildSearchableText()
         }
 
-        try? modelContext.save()
+        modelContext.persist(context: "batch-remove-tag")
         progress = 1.0
     }
 
@@ -92,7 +92,7 @@ final class BatchProcessor {
             modelContext.delete(doc)
         }
 
-        try? modelContext.save()
+        modelContext.persist(context: "batch-delete")
         NotificationCenter.default.post(
             name: .documentsDeleted,
             object: nil,
@@ -160,7 +160,7 @@ final class BatchProcessor {
             doc.rebuildSearchableText()
         }
 
-        try? modelContext.save()
+        modelContext.persist(context: "batch-reprocess")
         progress = 1.0
     }
 

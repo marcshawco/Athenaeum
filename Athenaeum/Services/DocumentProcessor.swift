@@ -218,7 +218,14 @@ final class DocumentProcessor {
             )
         }
 
-        let fileData = try Data(contentsOf: url)
+        // Read the file off the main actor. `DocumentProcessor` is
+        // `@Observable` and therefore MainActor-isolated by project
+        // default; a synchronous `Data(contentsOf:)` here would block
+        // UI rendering for multi-MB PDFs while the disk read happens.
+        let fileURL = url
+        let fileData = try await Task.detached(priority: .userInitiated) {
+            try Data(contentsOf: fileURL)
+        }.value
         let initialMetadata = await metadataExtractor.extractInitialMetadata(from: url, data: fileData, uti: uti)
 
         // Create document record
@@ -358,25 +365,39 @@ final class DocumentProcessor {
     // MARK: - PDF Extraction with Scanned Document Detection
 
     private func extractTextFromPDF(data: Data) async throws -> String {
-        guard let pdf = PDFDocument(data: data) else { return "" }
-
-        // First pass: try native text extraction
-        var text = ""
-        for i in 0..<pdf.pageCount {
-            if let page = pdf.page(at: i), let pageText = page.string {
-                text += pageText + "\n"
-            }
+        // PDFKit parsing + per-page `.string` extraction is synchronous
+        // and CPU-bound. Run it on a detached task so a 200-page PDF
+        // doesn't freeze the MainActor while pages are tokenized.
+        struct PDFExtraction: Sendable {
+            let text: String
+            let pageCount: Int
         }
+        let extraction = await Task.detached(priority: .userInitiated) { () -> PDFExtraction in
+            guard let pdf = PDFDocument(data: data) else {
+                return PDFExtraction(text: "", pageCount: 0)
+            }
+            var text = ""
+            for i in 0..<pdf.pageCount {
+                if let page = pdf.page(at: i), let pageText = page.string {
+                    text += pageText + "\n"
+                }
+            }
+            return PDFExtraction(text: text, pageCount: pdf.pageCount)
+        }.value
+
+        if extraction.pageCount == 0 { return "" }
 
         // Detect scanned PDF: if average characters per page is very low
-        let avgCharsPerPage = pdf.pageCount > 0 ? text.trimmingCharacters(in: .whitespacesAndNewlines).count / pdf.pageCount : 0
+        let avgCharsPerPage = extraction.text
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .count / extraction.pageCount
 
-        if avgCharsPerPage < scannedPDFThreshold && pdf.pageCount > 0 {
+        if avgCharsPerPage < scannedPDFThreshold {
             // Scanned PDF detected — run OCR via Apple Vision framework
             return try await ocrService.recognizeTextInPDF(data: data)
         }
 
-        return text
+        return extraction.text
     }
 
     // MARK: - Word Document Extraction
