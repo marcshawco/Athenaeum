@@ -235,8 +235,24 @@ final class LocalLLMService: LLMServiceProtocol, @unchecked Sendable {
     private let nativeOCR = VisionOCRService()
     private let lock = NSLock()
 
+    /// Set when the hardware tier changes (or any other event that
+    /// shifts `LlamaInferenceConfig` values). Active requests run to
+    /// completion on the existing contexts; the next request after this
+    /// flag is set triggers `purgeStaleContextsIfNeeded()`, which
+    /// unloads every cached context so the next load picks up the
+    /// fresh config (n_ctx, GPU layers, threads).
+    private var hasStaleConfigs = false
+
     init(modelManager: ModelManager) {
         self.modelManager = modelManager
+    }
+
+    /// Mark every loaded context as needing a fresh reload with the
+    /// latest `LlamaInferenceConfig`. Called by ContentView on
+    /// `.hardwareTierDidChange`. Cheap and synchronous — the actual
+    /// unload happens lazily on the next inference request.
+    func markAllContextsStale() {
+        lock.withLock { hasStaleConfigs = true }
     }
 
     func isModelAvailable(_ descriptor: LLMModelDescriptor) -> Bool {
@@ -295,6 +311,11 @@ final class LocalLLMService: LLMServiceProtocol, @unchecked Sendable {
     }
 
     func generateFromImage(imageData: Data, prompt: String, maxTokens: Int) async throws -> String {
+        // Lazy-reload hook: same as `contextForRole(_:)`. Drop any stale
+        // vision context (and any sibling text contexts) so the load
+        // below uses the latest `LlamaInferenceConfig`.
+        await purgeStaleContextsIfNeeded()
+
         // Try LLM-enhanced OCR if vision model is available
         if lock.withLock({ visionContext }) == nil {
             if let descriptor = LLMModelDescriptor.defaults.first(where: { $0.role == .vision }),
@@ -360,7 +381,61 @@ final class LocalLLMService: LLMServiceProtocol, @unchecked Sendable {
         }
     }
 
+    /// Drain the cache when configs were marked stale (e.g. by a
+    /// hardware-tier change). Active requests are already mid-flight on
+    /// the actors; since `LlamaContext` and `LlamaVisionContext` are
+    /// actors with serial executors, the `unload()` calls we await
+    /// queue *behind* any in-flight work and run once it completes.
+    /// `unload()` is idempotent (guarded by `isLoaded`), so re-unloading
+    /// a shared context that's already torn down is a no-op.
+    private func purgeStaleContextsIfNeeded() async {
+        let shouldPurge = lock.withLock { () -> Bool in
+            guard hasStaleConfigs else { return false }
+            hasStaleConfigs = false
+            return true
+        }
+        guard shouldPurge else { return }
+
+        // Snapshot unique context references (tagger + chat can share a
+        // single LlamaContext when they resolve to the same file).
+        // Dedupe so we don't await unload on the same actor twice.
+        let snapshot: ([LlamaContext], LlamaVisionContext?, [LLMRole]) = lock.withLock {
+            var seen = Set<ObjectIdentifier>()
+            var uniqueContexts: [LlamaContext] = []
+            for ctx in contexts.values where seen.insert(ObjectIdentifier(ctx)).inserted {
+                uniqueContexts.append(ctx)
+            }
+            let removedRoles = Array(contexts.keys)
+            let vc = visionContext
+            contexts.removeAll()
+            visionContext = nil
+            return (uniqueContexts, vc, removedRoles)
+        }
+
+        for ctx in snapshot.0 {
+            await ctx.unload()
+        }
+        if let vc = snapshot.1 {
+            await vc.unload()
+        }
+
+        let roles = snapshot.2
+        let hadVision = snapshot.1 != nil
+        if !roles.isEmpty || hadVision {
+            await MainActor.run { () -> Void in
+                for role in roles { modelManager.loadedModels.remove(role) }
+                if hadVision { modelManager.loadedModels.remove(.vision) }
+            }
+        }
+    }
+
     private func contextForRole(_ role: LLMRole) async throws -> LlamaContext {
+        // Lazy-reload hook: if any tier-driven config (n_ctx, GPU layers,
+        // threads) has changed since this context was loaded, drop every
+        // cached context now so the load path below picks up the new
+        // `LlamaInferenceConfig` from UserDefaults.
+        await purgeStaleContextsIfNeeded()
+
         // Return cached context if already loaded for this role.
         if let ctx = lock.withLock({ contexts[role] }) { return ctx }
 

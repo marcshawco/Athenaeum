@@ -423,7 +423,7 @@ struct SettingsView: View {
                 NotificationCenter.default.post(name: .modelsDidChange, object: nil)
             }
 
-            Text("Drives both the model lineup AND the runtime shape: chunk size, retrieval top-K, prompt budgets, and the inference context window all adapt to the chosen tier. Models already loaded in memory keep their context until next reload.")
+            Text("Drives both the model lineup AND the runtime shape: chunk size, retrieval top-K, prompt budgets, and the inference context window all adapt to the chosen tier. Indexing and retrieval changes take effect immediately; loaded models reload on your next chat turn (expect a 5–15 s warmup once).")
                 .font(Japandi.Typography.caption)
                 .foregroundStyle(Japandi.Colors.textTertiaryFB)
                 .fixedSize(horizontal: false, vertical: true)

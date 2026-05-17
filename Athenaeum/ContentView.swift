@@ -126,6 +126,13 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .modelsDidChange)) { _ in
             modelManager.scanForModels()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .hardwareTierDidChange)) { _ in
+            // Mark every loaded LlamaContext stale so the next inference
+            // request unloads + reloads with the new tier's n_ctx and
+            // GPU-layer count. Active streams finish on the old context
+            // first (the actor's serial executor guarantees ordering).
+            llmService?.markAllContextsStale()
+        }
         .sheet(isPresented: $showSettings) {
             SettingsView(modelManager: modelManager, autoScanRegistry: autoScanRegistry)
         }
