@@ -27,58 +27,84 @@ struct SidebarView: View {
     @State private var folderEditTarget: Folder?
     @State private var folderDeleteTarget: Folder?
 
+    /// Cached split of `pinnedTagsRaw` so each body re-render doesn't
+    /// re-parse the CSV 5+ times across `pinnedTags`, `pinnedSet`,
+    /// `pinTag`, `unpinTag`, and the section header. Recomputed only
+    /// when the underlying AppStorage string changes — see
+    /// `.onChange(of: pinnedTagsRaw)` in the body.
+    @State private var pinnedTagNames: [String] = []
+    @State private var pinnedTagSet: Set<String> = []
+
+    /// Cached split of `hiddenTagsRaw` — same pattern.
+    @State private var hiddenTagSet: Set<String> = []
+
+    /// Cached taxonomy organization: the sorted list of categories that
+    /// have ≥1 document AND the per-slug document count. Recomputed
+    /// only when the document set changes — see
+    /// `.onChange(of: allDocuments.count)`. Without this, the body
+    /// did one O(n) walk for `categoriesWithDocs` plus N more O(n)
+    /// walks (one per category) for the count badges — ~10k
+    /// comparisons per render at 500 docs × 20 categories.
+    @State private var categoriesWithDocs: [DocumentTaxonomy.Category] = []
+    @State private var categoryDocCounts: [String: Int] = [:]
+
     private var visibleTags: [Tag] {
-        let hidden = Set(hiddenTagsRaw.split(separator: ",").map { String($0) })
-        return tags.filter { !hidden.contains($0.name) }
+        tags.filter { !hiddenTagSet.contains($0.name) }
     }
 
     /// Tags the user has explicitly pinned, in pin order, with the
     /// up-to-cap limit applied. Each name is resolved back to its `Tag`
     /// row so we can display color + document count alongside.
     private var pinnedTags: [Tag] {
-        let order = pinnedTagsRaw
-            .split(separator: ",")
-            .map { String($0) }
-            .filter { !$0.isEmpty }
         let byName = Dictionary(uniqueKeysWithValues: tags.map { ($0.name, $0) })
-        return order.prefix(Self.pinnedTagsCap).compactMap { byName[$0] }
-    }
-
-    private var pinnedSet: Set<String> {
-        Set(pinnedTagsRaw.split(separator: ",").map { String($0) })
+        return pinnedTagNames.prefix(Self.pinnedTagsCap).compactMap { byName[$0] }
     }
 
     /// Pin a tag name to the sidebar. Appends to the end of the pinned
     /// list. No-op if already pinned or if we're at the cap.
     func pinTag(_ name: String) {
-        var current = pinnedTagsRaw.split(separator: ",").map { String($0) }
-        guard !current.contains(name) else { return }
-        guard current.count < Self.pinnedTagsCap else { return }
-        current.append(name)
-        pinnedTagsRaw = current.joined(separator: ",")
+        guard !pinnedTagSet.contains(name) else { return }
+        guard pinnedTagNames.count < Self.pinnedTagsCap else { return }
+        pinnedTagsRaw = (pinnedTagNames + [name]).joined(separator: ",")
     }
 
     /// Remove a tag name from the pinned-sidebar list.
     func unpinTag(_ name: String) {
-        let current = pinnedTagsRaw.split(separator: ",").map { String($0) }
-        pinnedTagsRaw = current.filter { $0 != name }.joined(separator: ",")
+        pinnedTagsRaw = pinnedTagNames.filter { $0 != name }.joined(separator: ",")
     }
 
-    /// Categories from `DocumentTaxonomy` that currently have at least one
-    /// document. Sorted by descending document count so the user's busiest
-    /// shelves float to the top.
-    private var categoriesWithDocs: [DocumentTaxonomy.Category] {
+    /// Update the cached `pinnedTagNames` / `pinnedTagSet` from the raw
+    /// AppStorage string. Called on appear and whenever the raw string
+    /// changes (e.g. from another sidebar invocation in a different
+    /// window, or the user wiping pinned tags from Settings).
+    private func refreshPinnedTagCache() {
+        let names = pinnedTagsRaw
+            .split(separator: ",")
+            .map { String($0) }
+            .filter { !$0.isEmpty }
+        pinnedTagNames = names
+        pinnedTagSet = Set(names)
+    }
+
+    private func refreshHiddenTagCache() {
+        hiddenTagSet = Set(
+            hiddenTagsRaw.split(separator: ",").map { String($0) }
+        )
+    }
+
+    /// Single pass over `allDocuments` that builds both the sorted
+    /// category list and the count-per-slug dict. Replaces the prior
+    /// pair of computed properties that each walked the document set
+    /// independently.
+    private func refreshCategoryCache() {
         var counts: [String: Int] = [:]
         for doc in allDocuments {
             if let slug = doc.categorySlug { counts[slug, default: 0] += 1 }
         }
-        return DocumentTaxonomy.categories
+        categoryDocCounts = counts
+        categoriesWithDocs = DocumentTaxonomy.categories
             .filter { counts[$0.slug, default: 0] > 0 }
             .sorted { (counts[$0.slug] ?? 0) > (counts[$1.slug] ?? 0) }
-    }
-
-    private func documentsInCategory(_ slug: String) -> [Document] {
-        allDocuments.filter { $0.categorySlug == slug }
     }
 
     /// Trim the noisy " Documents" suffix the taxonomy uses for readability
@@ -308,7 +334,7 @@ struct SidebarView: View {
                                 .foregroundStyle(Japandi.Colors.textPrimaryFB)
                                 .lineLimit(1)
                             Spacer()
-                            Text("\(documentsInCategory(cat.slug).count)")
+                            Text("\(categoryDocCounts[cat.slug, default: 0])")
                                 .font(Japandi.Typography.caption)
                                 .foregroundStyle(Japandi.Colors.textTertiaryFB)
                                 .padding(.horizontal, 6)
@@ -352,6 +378,18 @@ struct SidebarView: View {
         }
         .listStyle(.sidebar)
         .scrollContentBackground(.hidden)
+        .onAppear {
+            refreshPinnedTagCache()
+            refreshHiddenTagCache()
+            refreshCategoryCache()
+        }
+        .onChange(of: pinnedTagsRaw) { _, _ in refreshPinnedTagCache() }
+        .onChange(of: hiddenTagsRaw) { _, _ in refreshHiddenTagCache() }
+        // `allDocuments` itself isn't Equatable for onChange, but
+        // category-count changes are dominated by add/remove events;
+        // the count is a cheap signal that catches ~all updates that
+        // matter for the sidebar's by-category section.
+        .onChange(of: allDocuments.count) { _, _ in refreshCategoryCache() }
         .sheet(isPresented: $showFolderEditor) {
             FolderEditorSheet(folder: folderEditTarget) {
                 folderEditTarget = nil

@@ -194,6 +194,12 @@ struct ChatView: View {
             if persistChatsAcrossSessions, !messages.isEmpty {
                 saveCurrentConversation()
             }
+            // Cap the in-memory sources caches to the most recent N
+            // turns. Without this, long-running chats accumulate
+            // sources for every assistant message ever sent in this
+            // session — even after the messages themselves scroll out
+            // of the window the dict references stay live.
+            pruneSourcesCacheToRecentTurns()
         }
         .confirmationDialog(
             "Clear this chat?",
@@ -699,6 +705,27 @@ struct ChatView: View {
             Button(role: .destructive) {
                 delete(conv)
             } label: { Label("Delete", systemImage: "trash") }
+        }
+    }
+
+    // MARK: - Sources cache pruning
+
+    /// Hard cap on how many message-keyed sources entries we keep in
+    /// memory at once. Once a chat scrolls past this many turns, the
+    /// oldest entries get evicted from both the per-message sources
+    /// dict and the expansion-state set. Stops the dicts from growing
+    /// without bound in long-running chats; the SwiftData record
+    /// still has every turn's text, just not the citation chips.
+    private static let maxSourcesEntriesInMemory = 50
+
+    private func pruneSourcesCacheToRecentTurns() {
+        guard messages.count > Self.maxSourcesEntriesInMemory else { return }
+        let keepIDs = Set(messages.suffix(Self.maxSourcesEntriesInMemory).map(\.id))
+        if sourcesByMessage.count > keepIDs.count {
+            sourcesByMessage = sourcesByMessage.filter { keepIDs.contains($0.key) }
+        }
+        if expandedSourcesByMessage.count > keepIDs.count {
+            expandedSourcesByMessage = expandedSourcesByMessage.filter { keepIDs.contains($0) }
         }
     }
 

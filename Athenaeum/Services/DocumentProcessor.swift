@@ -376,13 +376,19 @@ final class DocumentProcessor {
             guard let pdf = PDFDocument(data: data) else {
                 return PDFExtraction(text: "", pageCount: 0)
             }
-            var text = ""
+            // Accumulate into an array and `join` once rather than `text +=`
+            // in the loop: Swift `String` is copy-on-write and the `+=`
+            // accumulator is O(n²) on the running length. On a 500-page
+            // PDF that's the difference between ~250k and ~125M character
+            // copies during import.
+            var pages: [String] = []
+            pages.reserveCapacity(pdf.pageCount)
             for i in 0..<pdf.pageCount {
                 if let page = pdf.page(at: i), let pageText = page.string {
-                    text += pageText + "\n"
+                    pages.append(pageText)
                 }
             }
-            return PDFExtraction(text: text, pageCount: pdf.pageCount)
+            return PDFExtraction(text: pages.joined(separator: "\n"), pageCount: pdf.pageCount)
         }.value
 
         if extraction.pageCount == 0 { return "" }

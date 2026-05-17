@@ -156,23 +156,23 @@ final class RAGService {
         let liveIDs: Set<UUID>? = fallbackDocuments.isEmpty
             ? nil
             : Set(fallbackDocuments.map(\.id))
-        // Title lookup powers the title-match boost in retrieval so a
-        // question like "what's on Marcus Shaw's resume?" beats a long
-        // unrelated doc on raw cosine alone.
-        let titleLookup = Dictionary(uniqueKeysWithValues: fallbackDocuments.map { ($0.id, $0.title) })
+        // Title lookup powers the title-match boost in retrieval AND the
+        // per-chunk title labels in `packChunks` below. Build it once.
+        let documentLookup: [UUID: String] = Dictionary(
+            uniqueKeysWithValues: fallbackDocuments.map { ($0.id, $0.title) }
+        )
         let results = await retrieveRelevantChunks(
             queryEmbedding: queryEmbedding,
             maxContext: maxContext,
             knownDocumentIDs: liveIDs,
             query: retrievalQuery,
-            documentTitles: titleLookup,
+            documentTitles: documentLookup,
             extraBoostTokens: kbBoostTokens
         )
 
         let fallbackChunks = results.isEmpty
             ? fallbackContextChunks(for: retrievalQuery, documents: fallbackDocuments, maxContext: maxContext)
             : []
-        let documentLookup = Dictionary(uniqueKeysWithValues: fallbackDocuments.map { ($0.id, $0.title) })
 
         // Context budget pulled from the active hardware tier. Lower tiers
         // shrink both numbers so an 8 GB Mac fits the prompt inside its
