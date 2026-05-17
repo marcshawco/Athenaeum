@@ -88,34 +88,6 @@ struct LlamaInferenceConfig: Sendable {
     }
 }
 
-// MARK: - One-shot backend init
-//
-// `llama_backend_init()` is global state. Calling it on every model
-// load wastes cycles and (in some llama.cpp builds) re-registers Metal
-// devices unnecessarily. Gate it behind an atomic flag so it runs at
-// most once per process lifetime.
-
-// The project sets `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, which
-// makes free functions and module-level lets default to MainActor
-// isolation. This init helper is called from `LlamaContext.load()`
-// — a custom-actor context — so everything here must be explicitly
-// `nonisolated` to avoid an actor-hop warning.
-
-#if canImport(llama)
-nonisolated private let llamaBackendLock = NSLock()
-nonisolated(unsafe) private var llamaBackendDidInit = false
-
-nonisolated func llamaBackendInitIfNeeded() {
-    llamaBackendLock.lock()
-    defer { llamaBackendLock.unlock() }
-    guard !llamaBackendDidInit else { return }
-    llama_backend_init()
-    llamaBackendDidInit = true
-}
-#else
-nonisolated func llamaBackendInitIfNeeded() {}
-#endif
-
 // MARK: - Llama Context
 
 actor LlamaContext {
@@ -123,13 +95,6 @@ actor LlamaContext {
     let modelPath: URL
     private var config: LlamaInferenceConfig
     private var isLoaded = false
-
-    /// In-flight streaming generations. Incremented by `generateStream`
-    /// before its producer task starts, decremented when the task ends.
-    /// `unload()` awaits this reaching zero before freeing the C pointers,
-    /// so a streaming task never operates on freed memory.
-    private var streamGenerationsInFlight: Int = 0
-    private var unloadWaiters: [CheckedContinuation<Void, Never>] = []
 
 #if canImport(llama)
     private var model: OpaquePointer?
@@ -152,26 +117,12 @@ actor LlamaContext {
         }
 
 #if canImport(llama)
-        llamaBackendInitIfNeeded()
+        llama_backend_init()
 
         var modelParams = llama_model_default_params()
         modelParams.n_gpu_layers = config.gpuLayers
-        guard let loadedModel = llama_model_load_from_file(modelPath.path, modelParams) else {
-            throw LlamaError.failedToLoad
-        }
-
-        // Rollback partial allocation on any thrown error below so we
-        // don't leak GPU/RAM. Cleared at the end on success.
-        var didSucceed = false
-        defer {
-            if !didSucceed {
-                if let s = sampler { llama_sampler_free(s); sampler = nil }
-                if let c = ctx     { llama_free(c); ctx = nil }
-                llama_model_free(loadedModel)
-                model = nil
-            }
-        }
-        model = loadedModel
+        model = llama_model_load_from_file(modelPath.path, modelParams)
+        guard model != nil else { throw LlamaError.failedToLoad }
 
         // Resolve thread count: 0 = auto (use available cores minus 2 for UI)
         let resolvedThreads: Int32 = config.nThreads > 0
@@ -183,36 +134,23 @@ actor LlamaContext {
         ctxParams.n_batch         = UInt32(config.batchSize)
         ctxParams.n_threads       = resolvedThreads
         ctxParams.n_threads_batch = resolvedThreads
-        guard let loadedCtx = llama_init_from_model(loadedModel, ctxParams) else {
-            throw LlamaError.failedToCreateContext
-        }
-        ctx = loadedCtx
+        ctx = llama_init_from_model(model, ctxParams)
+        guard ctx != nil else { throw LlamaError.failedToCreateContext }
 
         let sparams = llama_sampler_chain_default_params()
-        guard let loadedSampler = llama_sampler_chain_init(sparams) else {
-            throw LlamaError.failedToLoad
-        }
-        sampler = loadedSampler
-        llama_sampler_chain_add(loadedSampler, llama_sampler_init_temp(config.temperature))
-        llama_sampler_chain_add(loadedSampler, llama_sampler_init_top_k(Int32(config.topK)))
-        llama_sampler_chain_add(loadedSampler, llama_sampler_init_top_p(config.topP, 1))
-        llama_sampler_chain_add(loadedSampler, llama_sampler_init_dist(config.seed))
+        sampler = llama_sampler_chain_init(sparams)
+        llama_sampler_chain_add(sampler, llama_sampler_init_temp(config.temperature))
+        llama_sampler_chain_add(sampler, llama_sampler_init_top_k(Int32(config.topK)))
+        llama_sampler_chain_add(sampler, llama_sampler_init_top_p(config.topP, 1))
+        llama_sampler_chain_add(sampler, llama_sampler_init_dist(config.seed))
         isLoaded = true
-        didSucceed = true
 #else
         throw LlamaError.notLinked
 #endif
     }
 
-    func unload() async {
+    func unload() {
         guard isLoaded else { return }
-        // Wait for any in-flight streaming generations to finish before
-        // freeing the C pointers they're decoding against.
-        if streamGenerationsInFlight > 0 {
-            await withCheckedContinuation { cont in
-                unloadWaiters.append(cont)
-            }
-        }
 #if canImport(llama)
         if let s = sampler { llama_sampler_free(s) }
         if let c = ctx     { llama_free(c) }
@@ -220,21 +158,6 @@ actor LlamaContext {
         sampler = nil; ctx = nil; model = nil
 #endif
         isLoaded = false
-    }
-
-    /// Counter management for `generateStream`. Producer tasks call
-    /// these via `Task { await self.beginStreamGeneration() }` etc.
-    fileprivate func beginStreamGeneration() {
-        streamGenerationsInFlight += 1
-    }
-
-    fileprivate func endStreamGeneration() {
-        streamGenerationsInFlight -= 1
-        if streamGenerationsInFlight == 0, !unloadWaiters.isEmpty {
-            let waiters = unloadWaiters
-            unloadWaiters.removeAll()
-            for w in waiters { w.resume() }
-        }
     }
 
     // MARK: - Generation
@@ -247,9 +170,9 @@ actor LlamaContext {
         guard let vocab = llama_model_get_vocab(model) else { throw LlamaError.failedToLoad }
         llama_memory_clear(llama_get_memory(ctx), true)
 
-        let tokens = Self.tokenize(prompt, vocab: vocab)
+        let tokens = tokenize(prompt, vocab: vocab)
         guard !tokens.isEmpty else { return "" }
-        try Self.evalTokens(tokens, ctx: ctx, batchSize: cfg.batchSize)
+        try evalTokens(tokens, ctx: ctx, batchSize: cfg.batchSize)
 
         var output = ""
         var nPast = Int32(tokens.count)
@@ -260,9 +183,9 @@ actor LlamaContext {
             let tok = llama_sampler_sample(sampler, ctx, -1)
             llama_sampler_accept(sampler, tok)
             if llama_vocab_is_eog(vocab, tok) { break }
-            output += Self.tokenToPiece(tok, vocab: vocab)
-            Self.batchClear(&batch)
-            Self.batchAdd(&batch, token: tok, pos: nPast, seqIDs: [0], logits: true)
+            output += tokenToPiece(tok, vocab: vocab)
+            batchClear(&batch)
+            batchAdd(&batch, token: tok, pos: nPast, seqIDs: [0], logits: true)
             nPast += 1
             guard llama_decode(ctx, batch) == 0 else { break }
         }
@@ -289,22 +212,12 @@ actor LlamaContext {
                 return
             }
 
-            // Reserve our slot before the producer task starts. While
-            // streamGenerationsInFlight > 0, `unload()` waits — so the
-            // ctx/model/sampler pointers stay valid for the whole loop.
-            beginStreamGeneration()
-
-            let task = Task { [weak self] in
-                defer {
-                    // Decrement happens after the Task body finishes
-                    // (including normal exit, cancellation, throw).
-                    Task { [weak self] in await self?.endStreamGeneration() }
-                }
+            let task = Task {
                 do {
                     llama_memory_clear(llama_get_memory(ctx), true)
-                    let tokens = LlamaContext.tokenize(prompt, vocab: vocab)
+                    let tokens = self.tokenize(prompt, vocab: vocab)
                     guard !tokens.isEmpty else { continuation.finish(); return }
-                    try LlamaContext.evalTokens(tokens, ctx: ctx, batchSize: cfg.batchSize)
+                    try self.evalTokens(tokens, ctx: ctx, batchSize: cfg.batchSize)
 
                     var nPast = Int32(tokens.count)
                     var batch = llama_batch_init(1, 0, 1)
@@ -318,9 +231,9 @@ actor LlamaContext {
                         let tok = llama_sampler_sample(sampler, ctx, -1)
                         llama_sampler_accept(sampler, tok)
                         if llama_vocab_is_eog(vocab, tok) { break }
-                        continuation.yield(LlamaContext.tokenToPiece(tok, vocab: vocab))
-                        LlamaContext.batchClear(&batch)
-                        LlamaContext.batchAdd(&batch, token: tok, pos: nPast, seqIDs: [0], logits: true)
+                        continuation.yield(self.tokenToPiece(tok, vocab: vocab))
+                        self.batchClear(&batch)
+                        self.batchAdd(&batch, token: tok, pos: nPast, seqIDs: [0], logits: true)
                         nPast += 1
                         guard llama_decode(ctx, batch) == 0 else { break }
                     }
@@ -347,7 +260,7 @@ actor LlamaContext {
         defer { llama_set_embeddings(ctx, false) }
         llama_memory_clear(llama_get_memory(ctx), true)
 
-        var tokens = Self.tokenize(text, vocab: vocab)
+        var tokens = tokenize(text, vocab: vocab)
         guard !tokens.isEmpty else { return [] }
 
         // CRITICAL: truncate to fit within both n_batch and n_ctx.
@@ -363,7 +276,7 @@ actor LlamaContext {
         defer { llama_batch_free(batch) }
         for (i, tok) in tokens.enumerated() {
             // Only request logits for the final token (needed by llama_get_embeddings_seq)
-            Self.batchAdd(&batch, token: tok, pos: Int32(i), seqIDs: [0], logits: i == tokens.count - 1)
+            batchAdd(&batch, token: tok, pos: Int32(i), seqIDs: [0], logits: i == tokens.count - 1)
         }
         guard llama_decode(ctx, batch) == 0 else { throw LlamaError.decodeFailed }
 
@@ -383,13 +296,8 @@ actor LlamaContext {
 
     // MARK: - Helpers
 
-    // These helpers are pure functions over their parameters — they
-    // touch no actor state. Declared `static` so they can be called
-    // from inside the `generateStream` producer Task without crossing
-    // actor isolation (which would require `await` and break the
-    // `inout llama_batch` parameter pattern).
 #if canImport(llama)
-    static func tokenize(_ text: String, vocab: OpaquePointer) -> [llama_token] {
+    private func tokenize(_ text: String, vocab: OpaquePointer) -> [llama_token] {
         let n = Int32(text.utf8.count) + 16
         var tokens = [llama_token](repeating: 0, count: Int(n))
         let count = llama_tokenize(vocab, text, Int32(text.utf8.count), &tokens, n, true, true)
@@ -397,7 +305,7 @@ actor LlamaContext {
         return Array(tokens.prefix(Int(count)))
     }
 
-    static func tokenToPiece(_ token: llama_token, vocab: OpaquePointer) -> String {
+    private func tokenToPiece(_ token: llama_token, vocab: OpaquePointer) -> String {
         var buf = [CChar](repeating: 0, count: 256)
         let n = llama_token_to_piece(vocab, token, &buf, 256, 0, false)
         guard n > 0 else { return "" }
@@ -406,29 +314,24 @@ actor LlamaContext {
     }
 
     /// Manually clear a batch (not provided in the C API)
-    static func batchClear(_ batch: inout llama_batch) {
+    private func batchClear(_ batch: inout llama_batch) {
         batch.n_tokens = 0
     }
 
     /// Manually add a token to a batch (not provided in the C API)
-    static func batchAdd(_ batch: inout llama_batch, token: llama_token, pos: llama_pos, seqIDs: [llama_seq_id], logits: Bool) {
+    private func batchAdd(_ batch: inout llama_batch, token: llama_token, pos: llama_pos, seqIDs: [llama_seq_id], logits: Bool) {
         let idx = Int(batch.n_tokens)
         batch.token[idx]    = token
         batch.pos[idx]      = pos
         batch.n_seq_id[idx] = Int32(seqIDs.count)
-        // `batch.seq_id[idx]` is double-pointer storage llama.cpp can
-        // theoretically return nil for if the batch was init'd with
-        // n_seq_max == 0. Guard rather than force-unwrap.
-        if let seqIDPtr = batch.seq_id[idx] {
-            for (s, sid) in seqIDs.enumerated() {
-                seqIDPtr[s] = sid
-            }
+        for (s, sid) in seqIDs.enumerated() {
+            batch.seq_id[idx]![s] = sid
         }
         batch.logits[idx] = logits ? 1 : 0
         batch.n_tokens += 1
     }
 
-    static func evalTokens(_ tokens: [llama_token], ctx: OpaquePointer, batchSize: Int) throws {
+    private func evalTokens(_ tokens: [llama_token], ctx: OpaquePointer, batchSize: Int) throws {
         var batch = llama_batch_init(Int32(batchSize), 0, 1)
         defer { llama_batch_free(batch) }
         var i = 0

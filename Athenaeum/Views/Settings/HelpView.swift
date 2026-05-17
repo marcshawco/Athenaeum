@@ -69,7 +69,7 @@ struct HelpView: View {
                 step: "01",
                 title: "Get your first document in",
                 blurb: "Hit ⌘I (or File ▸ Import Documents), pick a PDF, image, receipt, lease — anything in your Documents folder. ATHENS copies it into a private vault, reads the text, summarizes it, and assigns tags. No internet involved.",
-                power: "Drag and drop also works anywhere on the grid. Settings ▸ Storage ▸ Reveal Vault opens the exact folder in Finder — by default it's in ATHENS's sandboxed container, or anywhere you picked via Choose Folder."
+                power: "Drag and drop also works anywhere on the grid. The vault lives at ~/Documents/Athenaeum Library."
             )
 
             tourCard(
@@ -133,8 +133,8 @@ struct HelpView: View {
             ),
             FAQEntry(
                 q: "Where do my files actually live?",
-                a: "Originals live in your ATHENS vault folder — by default the app's sandboxed container, or anywhere you picked via Settings ▸ Storage ▸ Choose Folder. Reveal Vault opens it in Finder. Derived data — text extracted from PDFs, the search index, AI summaries — lives in the app's Application Support folder (Settings ▸ Storage shows the exact path).",
-                d: "Default vault: ~/Library/Containers/com.shawhause.athens/Data/Documents/Athenaeum Library. Vault path is persisted as a security-scoped bookmark. Reset to default clears stale ones. Vector store: ~/Library/Containers/com.shawhause.athens/Data/Library/Application Support/Athenaeum/vector_store.json."
+                a: "Originals go in ~/Documents/Athenaeum Library (visible in Finder). You can pick a different folder in Settings ▸ Storage. Stuff ATHENS derives — text extracted from PDFs, the search index, AI summaries — lives in ~/Library/Application Support/Athenaeum.",
+                d: "Vault path is persisted as a security-scoped bookmark. Reset to default clears stale ones. Vector store: ~/Library/Application Support/Athenaeum/vector_store.json."
             ),
             FAQEntry(
                 q: "Why did ATHENS tag my document wrong?",
@@ -158,8 +158,8 @@ struct HelpView: View {
             ),
             FAQEntry(
                 q: "Can I back this up?",
-                a: "Yes. Time Machine works because everything lives in your home folder under the app's sandboxed container. To make a portable copy, use Settings ▸ Storage ▸ Reveal Vault to find your originals folder, and zip that together with the Application Support folder to capture the AI-derived metadata.",
-                d: "SwiftData store: <container>/Library/Application Support/Athenaeum/default.store. Models: …/Athenaeum/Models. MLX bundles: …/Athenaeum/MLXBundles. The container path is ~/Library/Containers/com.shawhause.athens/Data."
+                a: "Yes. Time Machine works because everything lives in your home folder. Or zip ~/Documents/Athenaeum Library together with ~/Library/Application Support/Athenaeum to capture the originals plus all the AI-derived metadata.",
+                d: "SwiftData store: ~/Library/Application Support/Athenaeum/default.store. Models: …/Athenaeum/Models. MLX bundles: …/Athenaeum/MLXBundles."
             ),
             FAQEntry(
                 q: "Which models do I actually need?",
@@ -183,7 +183,7 @@ struct HelpView: View {
             ),
             FAQEntry(
                 q: "Can I use my own models?",
-                a: "Yes. Drop any GGUF file into the app's Models folder (Model Status → Reveal in Finder opens it directly) with the expected filename and ATHENS will pick it up on next launch.",
+                a: "Yes. Drop any GGUF file into ~/Library/Application Support/Athenaeum/Models with the expected filename and ATHENS will pick it up on next launch. Model Status → Reveal in Finder gets you there in one click.",
                 d: "Filenames: Qwen2.5-14B-Instruct-Q4_K_M.gguf (tagger + chat) · nomic-embed-text-v1.5.Q4_K_M.gguf (embeddings) · ggml-model-Q4_K_M.gguf (MiniCPM-V)."
             ),
         ]
@@ -331,7 +331,6 @@ struct HelpView: View {
                 .font(.system(size: 18, weight: .ultraLight))
                 .foregroundStyle(Japandi.Colors.accentFallback)
                 .frame(width: 30)
-                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
                     .font(.system(size: 14, weight: .medium, design: .serif))
@@ -362,7 +361,6 @@ struct HelpView: View {
                 Image(systemName: icon)
                     .font(.system(size: 12, weight: .light))
                     .foregroundStyle(Japandi.Colors.accentFallback)
-                    .accessibilityHidden(true)
                 Text(title)
                     .font(.system(size: 13, weight: .medium, design: .serif))
                     .foregroundStyle(Japandi.Colors.textPrimaryFB)

@@ -7,24 +7,14 @@ import QuickLookThumbnailing
 // Generates preview thumbnails for documents using QuickLook and PDFKit.
 
 actor ThumbnailGenerator {
-    /// Bounded LRU-style cache backed by `NSCache`. Each 200×260 @2× thumbnail
-    /// is ~400 KB in RAM; a 5,000-doc library would otherwise pin ~2 GB resident
-    /// in an unbounded `[UUID: NSImage]`. NSCache also evicts under memory
-    /// pressure, which the raw dictionary couldn't.
-    private let cache: NSCache<NSUUID, NSImage> = {
-        let cache = NSCache<NSUUID, NSImage>()
-        cache.countLimit = 512
-        cache.totalCostLimit = 256 * 1024 * 1024  // ~256 MB
-        return cache
-    }()
+    private var cache: [UUID: NSImage] = [:]
     private let thumbnailSize = CGSize(width: 200, height: 260)
 
     // MARK: - Public API
 
     func thumbnail(for document: Document) async -> NSImage? {
-        let key = document.id as NSUUID
         // Check cache
-        if let cached = cache.object(forKey: key) {
+        if let cached = cache[document.id] {
             return cached
         }
 
@@ -44,9 +34,7 @@ actor ThumbnailGenerator {
         }
 
         if let image {
-            // Approximate cost in bytes: width × height × 4 (RGBA).
-            let cost = Int(image.size.width) * Int(image.size.height) * 4
-            cache.setObject(image, forKey: key, cost: cost)
+            cache[document.id] = image
         }
         return image
     }
@@ -61,11 +49,11 @@ actor ThumbnailGenerator {
     }
 
     func clearCache(for documentID: UUID) {
-        cache.removeObject(forKey: documentID as NSUUID)
+        cache.removeValue(forKey: documentID)
     }
 
     func clearAllCache() {
-        cache.removeAllObjects()
+        cache.removeAll()
     }
 
     // MARK: - PDF Thumbnail

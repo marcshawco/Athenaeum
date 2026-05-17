@@ -16,13 +16,7 @@ enum AppIconVariant: String, CaseIterable, Identifiable, Sendable {
 
     var id: String { rawValue }
 
-    /// Imageset name in `Assets.xcassets`. (We keep this string-based
-    /// lookup rather than the Xcode-generated `ImageResource.brandMark`
-    /// symbol because the type-safe symbols only resolve once the
-    /// catalog has been compiled at least once, and the strings here
-    /// are the source-of-truth identifiers that the catalog's
-    /// imagesets are named after — a rename of the imageset is the
-    /// signal to update both sides in lockstep.)
+    /// Imageset name in `Assets.xcassets`.
     var assetName: String {
         switch self {
         case .ink:     "BrandMark"

@@ -53,7 +53,7 @@ struct DocumentDetailView: View {
                 }
                 document.modifiedAt = .now
                 document.rebuildSearchableText()
-                modelContext.persist(context: "doc-detail-type-pick")
+                try? modelContext.save()
                 showTypePicker = false
             } onCancel: {
                 showTypePicker = false
@@ -317,7 +317,7 @@ struct DocumentDetailView: View {
                     document.documentDate = editedDocumentDate
                     document.modifiedAt = .now
                     document.rebuildSearchableText()
-                    modelContext.persist(context: "doc-detail-date-save")
+                    try? modelContext.save()
                     isEditingDocumentDate = false
                 }
                 .buttonStyle(.plain)
@@ -328,7 +328,7 @@ struct DocumentDetailView: View {
                     document.documentDate = nil
                     document.modifiedAt = .now
                     document.rebuildSearchableText()
-                    modelContext.persist(context: "doc-detail-date-clear")
+                    try? modelContext.save()
                     isEditingDocumentDate = false
                 }
                 .buttonStyle(.plain)
@@ -469,7 +469,7 @@ struct DocumentDetailView: View {
         document.title = trimmedTitle
         document.modifiedAt = .now
         document.rebuildSearchableText()
-        modelContext.persist(context: "doc-detail-rename")
+        try? modelContext.save()
         isEditing = false
     }
 
@@ -490,14 +490,14 @@ struct DocumentDetailView: View {
             document.tags?.append(tag)
         }
         document.rebuildSearchableText()
-        modelContext.persist(context: "doc-detail-add-tag")
+        try? modelContext.save()
         newTagName = ""
     }
 
     private func removeTag(_ tag: Tag) {
         document.tags?.removeAll { $0.name == tag.name }
         document.rebuildSearchableText()
-        modelContext.persist(context: "doc-detail-remove-tag")
+        try? modelContext.save()
     }
 
     private func normalizeTagName(_ rawName: String) -> String {

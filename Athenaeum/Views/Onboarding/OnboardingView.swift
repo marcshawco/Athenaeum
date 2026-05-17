@@ -2,12 +2,7 @@ import SwiftUI
 
 struct OnboardingView: View {
     @AppStorage("hasCompletedOnboarding") private var hasCompleted = false
-    @AppStorage("appIconVariant") private var appIconVariantRaw: String = AppIconVariant.ink.rawValue
     @State private var currentPage = 0
-
-    private var brandMarkAsset: String {
-        (AppIconVariant(rawValue: appIconVariantRaw) ?? .ink).assetName
-    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -77,7 +72,7 @@ struct OnboardingView: View {
         VStack(spacing: Japandi.Spacing.xl) {
             Spacer()
 
-            Image(brandMarkAsset)
+            Image("BrandMark")
                 .resizable()
                 .interpolation(.high)
                 .frame(width: 96, height: 96)
@@ -121,7 +116,6 @@ struct OnboardingView: View {
             Image(systemName: "cpu")
                 .font(.system(size: 44, weight: .ultraLight))
                 .foregroundStyle(Japandi.Colors.accentMutedFallback)
-                .accessibilityHidden(true)
 
             VStack(spacing: Japandi.Spacing.sm) {
                 Text("Local AI Models")
@@ -175,7 +169,6 @@ struct OnboardingView: View {
             Image(systemName: "arrow.down.doc")
                 .font(.system(size: 44, weight: .ultraLight))
                 .foregroundStyle(Japandi.Colors.accentFallback)
-                .accessibilityHidden(true)
 
             VStack(spacing: Japandi.Spacing.sm) {
                 Text("Import Documents")
@@ -220,7 +213,6 @@ struct OnboardingView: View {
                 Image(systemName: "checkmark")
                     .font(.system(size: 36, weight: .ultraLight))
                     .foregroundStyle(Japandi.Colors.accentFallback)
-                    .accessibilityHidden(true)
             }
 
             VStack(spacing: Japandi.Spacing.sm) {
@@ -258,7 +250,6 @@ private struct FeatureItem: View {
             Image(systemName: icon)
                 .font(.system(size: 22, weight: .ultraLight))
                 .foregroundStyle(Japandi.Colors.accentMutedFallback)
-                .accessibilityHidden(true)
 
             Text(title)
                 .font(Japandi.Typography.headline)
@@ -269,9 +260,6 @@ private struct FeatureItem: View {
                 .foregroundStyle(Japandi.Colors.textTertiaryFB)
         }
         .frame(width: 120)
-        // Title + description carry the meaning; collapse so VoiceOver
-        // reads each FeatureItem as one element.
-        .accessibilityElement(children: .combine)
     }
 }
 
@@ -316,7 +304,6 @@ private struct FormatRow: View {
                 .font(.system(size: 13, weight: .ultraLight))
                 .foregroundStyle(Japandi.Colors.accentMutedFallback)
                 .frame(width: 22)
-                .accessibilityHidden(true)
 
             Text(label)
                 .font(Japandi.Typography.body)

@@ -248,24 +248,7 @@ struct DocumentGridView: View {
                     .foregroundStyle(Japandi.Colors.accentFallback)
                     .background(Japandi.Colors.surfaceRaisedFB.clipShape(Circle()))
                     .padding(Japandi.Spacing.xs)
-                    .accessibilityHidden(true)
             }
-        }
-        // Custom-styled card; surface it as a real interactive element
-        // for VoiceOver + Full Keyboard Access. `.focusable()` enables
-        // tabbing to the card, Return triggers the same handler as a
-        // mouse click.
-        .focusable()
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(Text(document.title))
-        .accessibilityAddTraits(isItemSelected || selectedDocument?.id == document.id ? [.isButton, .isSelected] : .isButton)
-        .onKeyPress(.return) {
-            handleClick(on: document)
-            return .handled
-        }
-        .onKeyPress(.space) {
-            handleClick(on: document)
-            return .handled
         }
     }
 
@@ -522,7 +505,7 @@ struct DocumentGridView: View {
             doc.modifiedAt = .now
             doc.rebuildSearchableText()
         }
-        modelContext.persist(context: "grid-batch-clear-tags")
+        try? modelContext.save()
         NotificationCenter.default.post(name: .tagsDidChange, object: nil)
         // Keep the selection — user might want to immediately re-tag.
     }

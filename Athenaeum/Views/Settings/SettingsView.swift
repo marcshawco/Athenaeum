@@ -158,7 +158,7 @@ struct SettingsView: View {
     private var aboutTab: some View {
         VStack(alignment: .leading, spacing: Japandi.Spacing.lg) {
             HStack(spacing: Japandi.Spacing.md) {
-                Image(currentIconVariant.assetName)
+                Image("BrandMark")
                     .resizable()
                     .interpolation(.high)
                     .frame(width: 72, height: 72)
@@ -282,7 +282,6 @@ struct SettingsView: View {
         return Button {
             appIconVariantRaw = variant.rawValue
             AppIconApplier.apply(variant)
-            NotificationCenter.default.post(name: .appIconVariantDidChange, object: nil)
         } label: {
             VStack(spacing: 6) {
                 Image(variant.assetName)
@@ -296,39 +295,14 @@ struct SettingsView: View {
                                 isSelected
                                     ? Japandi.Colors.accentFallback
                                     : Japandi.Colors.borderFallback,
-                                lineWidth: isSelected ? 2 : 0.5
+                                lineWidth: isSelected ? 1.5 : 0.5
                             )
                     )
-                    .overlay(alignment: .topTrailing) {
-                        if isSelected {
-                            Image(systemName: "checkmark.circle.fill")
-                                .font(.system(size: 18, weight: .semibold))
-                                .symbolRenderingMode(.palette)
-                                .foregroundStyle(.white, Japandi.Colors.accentFallback)
-                                .background(
-                                    Circle()
-                                        .fill(Color.white)
-                                        .frame(width: 14, height: 14)
-                                )
-                                .offset(x: 6, y: -6)
-                                .transition(.scale.combined(with: .opacity))
-                                .accessibilityHidden(true)
-                        }
-                    }
-                    .animation(.easeOut(duration: 0.15), value: isSelected)
-
-                HStack(spacing: 3) {
-                    if isSelected {
-                        Image(systemName: "checkmark")
-                            .font(.system(size: 9, weight: .bold))
-                            .foregroundStyle(Japandi.Colors.accentFallback)
-                    }
-                    Text(variant.displayName)
-                        .font(.system(size: 11, weight: isSelected ? .semibold : .regular))
-                        .foregroundStyle(isSelected
-                                         ? Japandi.Colors.accentFallback
-                                         : Japandi.Colors.textSecondaryFB)
-                }
+                Text(variant.displayName)
+                    .font(.system(size: 11, weight: isSelected ? .medium : .regular))
+                    .foregroundStyle(isSelected
+                                     ? Japandi.Colors.textPrimaryFB
+                                     : Japandi.Colors.textSecondaryFB)
             }
             .frame(width: 80)
             .padding(.vertical, 4)
@@ -336,7 +310,6 @@ struct SettingsView: View {
         .buttonStyle(.plain)
         .help(variant.helpText)
         .accessibilityLabel("\(variant.displayName) app icon")
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     // MARK: - AI
@@ -413,17 +386,14 @@ struct SettingsView: View {
             .labelsHidden()
             .pickerStyle(.menu)
             .onChange(of: hardwareTierOverride) { _, _ in
-                // Write the new tier's tunables into the shared keys so
-                // LlamaInferenceConfig (n_ctx, GPU layers), RAGService
-                // (chunk size, overlap, char budgets), and ChatView
-                // (ragTopK) all pick them up on next read. Then notify
-                // ModelManager + any tier observers.
-                HardwareProfiler.applyTunablesForActiveTier()
-                NotificationCenter.default.post(name: .hardwareTierDidChange, object: nil)
+                // Tell ModelStatusView and other consumers to re-read the
+                // active descriptors. ModelManager.scanForModels handles
+                // the bulk; tier-aware downloader entries pick up on
+                // their next read.
                 NotificationCenter.default.post(name: .modelsDidChange, object: nil)
             }
 
-            Text("Drives both the model lineup AND the runtime shape: chunk size, retrieval top-K, prompt budgets, and the inference context window all adapt to the chosen tier. Indexing and retrieval changes take effect immediately; loaded models reload on your next chat turn (expect a 5–15 s warmup once).")
+            Text("Model lineup adapts to the chosen tier. Compact runs on 8 GB Macs, Standard on 16 GB, Performance on 24+ GB. Anything above 24 GB shows the same lineup until we ship a heavier model worth the RAM.")
                 .font(Japandi.Typography.caption)
                 .foregroundStyle(Japandi.Colors.textTertiaryFB)
                 .fixedSize(horizontal: false, vertical: true)

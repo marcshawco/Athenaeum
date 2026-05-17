@@ -125,7 +125,7 @@ final class DocumentProcessor {
             document.processingError = "Original file data is missing."
             document.modifiedAt = .now
             document.rebuildSearchableText()
-            modelContext.persist(context: "doc-process-missing-data")
+            try? modelContext.save()
             return
         }
         let uti = document.fileType
@@ -185,19 +185,12 @@ final class DocumentProcessor {
             document.processingError = error.localizedDescription
             document.modifiedAt = .now
             document.rebuildSearchableText()
-            modelContext.persist(context: "doc-process-failed")
+            try? modelContext.save()
             throw error
         }
     }
 
     // MARK: - Pipeline
-
-    /// Hard cap on file size we'll import. Auto-scan watches user folders;
-    /// without this, a 5 GB PDF dropped into Downloads would be pulled
-    /// into a Data blob in RAM and persisted into the SwiftData store.
-    /// 250 MB covers every realistic document and stops auto-scan from
-    /// blowing up on accidental videos / disk images.
-    private static let maxImportFileSize: Int64 = 250 * 1024 * 1024
 
     private func processFile(at url: URL) async throws {
         let accessing = url.startAccessingSecurityScopedResource()
@@ -208,24 +201,7 @@ final class DocumentProcessor {
         let resourceValues = try url.resourceValues(forKeys: [.fileSizeKey, .typeIdentifierKey])
         let fileSize = Int64(resourceValues.fileSize ?? 0)
         let uti = resourceValues.typeIdentifier ?? UTType.data.identifier
-
-        // Bail out on oversized files before we read them into memory.
-        if fileSize > Self.maxImportFileSize {
-            throw NSError(
-                domain: "DocumentProcessor",
-                code: 1001,
-                userInfo: [NSLocalizedDescriptionKey: "File is too large to import (\(ByteCountFormatter.string(fromByteCount: fileSize, countStyle: .file)) exceeds 250 MB limit)."]
-            )
-        }
-
-        // Read the file off the main actor. `DocumentProcessor` is
-        // `@Observable` and therefore MainActor-isolated by project
-        // default; a synchronous `Data(contentsOf:)` here would block
-        // UI rendering for multi-MB PDFs while the disk read happens.
-        let fileURL = url
-        let fileData = try await Task.detached(priority: .userInitiated) {
-            try Data(contentsOf: fileURL)
-        }.value
+        let fileData = try Data(contentsOf: url)
         let initialMetadata = await metadataExtractor.extractInitialMetadata(from: url, data: fileData, uti: uti)
 
         // Create document record
@@ -277,7 +253,7 @@ final class DocumentProcessor {
             document.processingError = error.localizedDescription
             document.modifiedAt = .now
             document.rebuildSearchableText()
-            modelContext.persist(context: "doc-reprocess-failed")
+            try? modelContext.save()
             throw error
         }
     }
@@ -365,39 +341,25 @@ final class DocumentProcessor {
     // MARK: - PDF Extraction with Scanned Document Detection
 
     private func extractTextFromPDF(data: Data) async throws -> String {
-        // PDFKit parsing + per-page `.string` extraction is synchronous
-        // and CPU-bound. Run it on a detached task so a 200-page PDF
-        // doesn't freeze the MainActor while pages are tokenized.
-        struct PDFExtraction: Sendable {
-            let text: String
-            let pageCount: Int
-        }
-        let extraction = await Task.detached(priority: .userInitiated) { () -> PDFExtraction in
-            guard let pdf = PDFDocument(data: data) else {
-                return PDFExtraction(text: "", pageCount: 0)
-            }
-            var text = ""
-            for i in 0..<pdf.pageCount {
-                if let page = pdf.page(at: i), let pageText = page.string {
-                    text += pageText + "\n"
-                }
-            }
-            return PDFExtraction(text: text, pageCount: pdf.pageCount)
-        }.value
+        guard let pdf = PDFDocument(data: data) else { return "" }
 
-        if extraction.pageCount == 0 { return "" }
+        // First pass: try native text extraction
+        var text = ""
+        for i in 0..<pdf.pageCount {
+            if let page = pdf.page(at: i), let pageText = page.string {
+                text += pageText + "\n"
+            }
+        }
 
         // Detect scanned PDF: if average characters per page is very low
-        let avgCharsPerPage = extraction.text
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .count / extraction.pageCount
+        let avgCharsPerPage = pdf.pageCount > 0 ? text.trimmingCharacters(in: .whitespacesAndNewlines).count / pdf.pageCount : 0
 
-        if avgCharsPerPage < scannedPDFThreshold {
+        if avgCharsPerPage < scannedPDFThreshold && pdf.pageCount > 0 {
             // Scanned PDF detected — run OCR via Apple Vision framework
             return try await ocrService.recognizeTextInPDF(data: data)
         }
 
-        return extraction.text
+        return text
     }
 
     // MARK: - Word Document Extraction
@@ -487,7 +449,7 @@ final class DocumentProcessor {
         document.title = trimmed
         document.modifiedAt = .now
         document.rebuildSearchableText()
-        modelContext.persist(context: "doc-rename")
+        try? modelContext.save()
         return true
     }
 
@@ -809,35 +771,21 @@ private extension String {
 
 // MARK: - Tagger Log
 //
-// Writes tagging-pipeline diagnostics to
+// Writes a permanent log of every tagging attempt to
 // `~/Library/Containers/<bundle-id>/Data/Library/Application Support/Athenaeum/tagger.log`
-// for debugging tag quality. The privacy policy explicitly covers this
-// file: it stays on the user's Mac and is never transmitted.
+// (or the equivalent unsandboxed path). Survives across launches and
+// doesn't depend on Console.app's filtering. Console.app + NSLog can
+// hide Info-level messages by default; a plain text file always works.
 //
-// The on-disk log is sandboxed (only this app can read it), capped via
-// rotation, and persists across launches.
-//
-// **Privacy-sensitive note about NSLog:** macOS `NSLog` is system-wide
-// — content shows up in Console.app, `log stream`, and any sysdiagnose
-// capture for **any** process to read. Mirroring document content to
-// NSLog therefore contradicts the "data stays on your Mac and is not
-// linked to your identity" guarantee. NSLog is gated behind `#if DEBUG`
-// so release builds (TestFlight + App Store) only ever touch the
-// per-user on-disk log.
+// Mirrored from every `tlog(...)` call alongside the existing NSLog so
+// you can use either Console, `log stream`, or just open the file.
 
 enum TaggerLog {
-    /// Cap the on-disk log so a long-running install doesn't accumulate
-    /// gigabytes of past tagging traces. When the file exceeds this size
-    /// we rotate by dropping the first ~50% of lines.
-    private static let maxBytes: Int = 2 * 1024 * 1024  // 2 MB
-
     private static let formatter: ISO8601DateFormatter = {
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return f
     }()
-
-    private static let writeQueue = DispatchQueue(label: "athens.tagger-log.writer")
 
     static var logFileURL: URL {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
@@ -850,41 +798,22 @@ enum TaggerLog {
         let line = "[\(formatter.string(from: Date()))] \(message)\n"
         guard let data = line.data(using: .utf8) else { return }
         let url = logFileURL
-        writeQueue.async {
-            if FileManager.default.fileExists(atPath: url.path) {
-                if let handle = try? FileHandle(forWritingTo: url) {
-                    defer { try? handle.close() }
-                    _ = try? handle.seekToEnd()
-                    try? handle.write(contentsOf: data)
-                }
-                rotateIfNeeded(at: url)
-            } else {
-                try? data.write(to: url)
+        if FileManager.default.fileExists(atPath: url.path) {
+            if let handle = try? FileHandle(forWritingTo: url) {
+                defer { try? handle.close() }
+                _ = try? handle.seekToEnd()
+                try? handle.write(contentsOf: data)
             }
+        } else {
+            try? data.write(to: url)
         }
-    }
-
-    /// Halve the file in-place when it exceeds `maxBytes`. We read,
-    /// drop the first ~50% by newline, and rewrite. Single-process
-    /// app so no locking concerns.
-    private static func rotateIfNeeded(at url: URL) {
-        guard let size = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? Int,
-              size > maxBytes,
-              let data = try? Data(contentsOf: url),
-              let text = String(data: data, encoding: .utf8) else { return }
-        let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
-        let keep = lines.suffix(lines.count / 2).joined(separator: "\n")
-        try? Data(keep.utf8).write(to: url, options: .atomic)
     }
 }
 
-/// Tagger log helper. Writes to the sandboxed on-disk log (privacy-OK
-/// per the policy: stays local, never transmitted) and, in DEBUG only,
-/// mirrors to NSLog for developer convenience. NSLog is system-wide on
-/// macOS, so release builds never put document content through it.
+/// Tagger log helper — writes to both NSLog (so Console.app / `log stream`
+/// catch it) and the on-disk tagger.log file (so logs survive without any
+/// log-viewer gymnastics).
 func tlog(_ message: String) {
-    #if DEBUG
-    NSLog("[ATHENS] %@", message)
-    #endif
+    NSLog("[Athenaeum] %@", message)
     TaggerLog.append(message)
 }

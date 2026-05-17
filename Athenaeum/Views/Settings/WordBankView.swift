@@ -66,7 +66,7 @@ struct WordBankView: View {
         ) { target in
             Button("Delete", role: .destructive) {
                 modelContext.delete(target)
-                modelContext.persist(context: "word-bank-delete")
+                try? modelContext.save()
                 deleteTarget = nil
             }
             Button("Cancel", role: .cancel) { deleteTarget = nil }
@@ -265,7 +265,7 @@ struct WordBankView: View {
                         other.isSelf = false
                     }
                 }
-                modelContext.persist(context: "word-bank-new")
+                try? modelContext.save()
                 editing = nil
             } onCancel: {
                 editing = nil
@@ -279,7 +279,7 @@ struct WordBankView: View {
                         other.isSelf = false
                     }
                 }
-                modelContext.persist(context: "word-bank-edit")
+                try? modelContext.save()
                 editing = nil
             } onCancel: {
                 editing = nil

@@ -9,12 +9,24 @@ enum Japandi {
     // MARK: - Color Palette
 
     enum Colors {
-        // The active palette is the `*Fallback` set below — both light
-        // and dark variants are defined in code so the theme stays
-        // self-contained. The previous asset-catalog-backed tokens
-        // (Background, Surface, SurfaceRaised, BrandAccent, AccentMuted,
-        // TextPrimary/Secondary/Tertiary, Border) were dead weight and
-        // were removed in the 2.4.x dead-asset sweep.
+        // Backgrounds
+        static let background    = Color("Background",    bundle: nil)
+        static let surface       = Color("Surface",       bundle: nil)
+        static let surfaceRaised = Color("SurfaceRaised", bundle: nil)
+
+        // Semantic
+        static let accent       = Color("BrandAccent",  bundle: nil)
+        static let accentMuted  = Color("AccentMuted",  bundle: nil)
+
+        // Text
+        static let textPrimary   = Color("TextPrimary",   bundle: nil)
+        static let textSecondary = Color("TextSecondary", bundle: nil)
+        static let textTertiary  = Color("TextTertiary",  bundle: nil)
+
+        // Utility
+        static let border       = Color("Border",       bundle: nil)
+        static let destructive  = Color("Destructive",  bundle: nil)
+        static let success      = Color("Success",      bundle: nil)
 
         // Stillwater Warm palette.
         // Light: FBFAF7 paper · 3E5C4A moss · B98A4F clay · 211F1B ink.
@@ -23,20 +35,10 @@ enum Japandi {
         static let surfaceFallback     = Color(light: 0xF4F2EC, dark: 0x231F1B)
         static let surfaceRaisedFB     = Color(light: 0xFFFFFF, dark: 0x2A2521)
         static let accentFallback      = Color(light: 0x3E5C4A, dark: 0xC8D4BE)
-        // Accessibility-tuned: `accentMutedFallback` at 0x8AA89A on cream
-        // was ~2.4:1 (failed WCAG AA). Darkened the light variant to
-        // 0x4F6D5E for ~4.7:1 against bg.
-        static let accentMutedFallback = Color(light: 0x4F6D5E, dark: 0x8AA89A)
+        static let accentMutedFallback = Color(light: 0x8AA89A, dark: 0x8AA89A)
         static let textPrimaryFB       = Color(light: 0x211F1B, dark: 0xEDEFE6)
         static let textSecondaryFB     = Color(light: 0x5A554D, dark: 0xB7C2B0)
-        // Accessibility-tuned: light variant was 0x9C968B (~3.4:1).
-        // 0x6E6960 lifts it above 4.5:1 while keeping the warm earth tone.
-        static let textTertiaryFB      = Color(light: 0x6E6960, dark: 0x8FA395)
-        /// Code-defined destructive accent. The previous Destructive
-        /// asset-catalog colorset was the only consumer; removed in the
-        /// 2.4.x dead-asset sweep. Used by the save-failure banner and
-        /// any future "danger" affordance.
-        static let destructiveFallback = Color(light: 0xBE4640, dark: 0xE27066)
+        static let textTertiaryFB      = Color(light: 0x9C968B, dark: 0x8FA395)
         static let borderFallback      = Color(light: 0xE6E1D5, dark: 0x3A332B)
         // inkFallback — deepest ink as *text* color. Flips to near-paper
         // in dark mode so body copy stays legible against a dark background.
@@ -117,55 +119,11 @@ enum Japandi {
     }
 
     // MARK: - Animation
-    //
-    // Each motion is published as `Animation?` and resolves to `nil`
-    // whenever the system "Reduce Motion" accessibility setting is on
-    // (System Settings ▸ Accessibility ▸ Display ▸ Reduce motion).
-    // SwiftUI's `withAnimation(_:_:)` and `.animation(_:value:)` both
-    // accept `Animation?` — passing `nil` disables the animation while
-    // still applying the state change, so every existing call site
-    // picks this up without changing.
-    //
-    // Caveat: `NSWorkspace.accessibilityDisplayShouldReduceMotion` is
-    // read at access time and is not a SwiftUI environment value, so
-    // toggling Reduce Motion mid-session won't ripple to already-mounted
-    // views until the next state change re-evaluates the call site
-    // (or the user restarts the app). This is acceptable; the setting
-    // is changed rarely in practice.
 
     enum Motion {
-        static var snappy: Animation? {
-            shouldReduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.85)
-        }
-        static var gentle: Animation? {
-            shouldReduceMotion ? nil : .spring(response: 0.5, dampingFraction: 0.8)
-        }
-        static var duration: Animation? {
-            shouldReduceMotion ? nil : .easeInOut(duration: 0.25)
-        }
-
-        /// Convenience: returns the passed-in animation when motion is
-        /// allowed, nil otherwise. Use at call sites that have a custom
-        /// animation outside this enum's three presets.
-        static func reduced(_ animation: Animation) -> Animation? {
-            shouldReduceMotion ? nil : animation
-        }
-
-        private static var shouldReduceMotion: Bool {
-            NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-        }
-    }
-
-    // MARK: - Transparency
-    //
-    // System Settings ▸ Accessibility ▸ Display ▸ Reduce transparency.
-    // Views that use blur / `.ultraThinMaterial` should consult this and
-    // swap for a solid fill when true.
-
-    enum Transparency {
-        static var shouldReduce: Bool {
-            NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
-        }
+        static let snappy   = Animation.spring(response: 0.3, dampingFraction: 0.85)
+        static let gentle   = Animation.spring(response: 0.5, dampingFraction: 0.8)
+        static let duration = Animation.easeInOut(duration: 0.25)
     }
 
     // MARK: - Layout

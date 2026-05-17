@@ -1,31 +1,7 @@
 import Foundation
-import CryptoKit
 
 // MARK: - Model Downloader
-// Downloads GGUF models from HuggingFace Hub with progress tracking,
-// resume support, redirect-host allowlisting, and optional per-descriptor
-// SHA-256 integrity verification.
-
-/// Hostnames whose 30x redirects we follow. Hugging Face uses a
-/// CloudFront-fronted CDN for large LFS files; everything else is
-/// rejected so a hijacked redirect can't ship a poisoned model.
-private let allowedRedirectHosts: Set<String> = [
-    "huggingface.co",
-    "cdn-lfs.huggingface.co",
-    "cdn-lfs-us-1.huggingface.co",
-    "cdn-lfs-eu-1.huggingface.co",
-]
-private let allowedRedirectSuffixes: [String] = [
-    ".huggingface.co",
-    ".hf.co",
-    ".cloudfront.net",
-]
-
-func isAllowedRedirectHost(_ host: String?) -> Bool {
-    guard let host = host?.lowercased() else { return false }
-    if allowedRedirectHosts.contains(host) { return true }
-    return allowedRedirectSuffixes.contains(where: { host.hasSuffix($0) })
-}
+// Downloads GGUF models from HuggingFace Hub with progress tracking and resume support.
 
 @Observable
 final class ModelDownloader {
@@ -72,20 +48,6 @@ final class ModelDownloader {
         let repoID: String
         let filename: String
         let expectedSize: Int64 // bytes, approximate
-        /// Optional SHA-256 hex string of the canonical model file. When
-        /// set, `didFinishDownload` rejects any download whose hash
-        /// doesn't match (protects against MITM, CDN compromise, or
-        /// upstream tampering). Hashes should be populated as each
-        /// model file is verified against the upstream repository.
-        let expectedSHA256: String?
-
-        init(role: LLMRole, repoID: String, filename: String, expectedSize: Int64, expectedSHA256: String? = nil) {
-            self.role = role
-            self.repoID = repoID
-            self.filename = filename
-            self.expectedSize = expectedSize
-            self.expectedSHA256 = expectedSHA256
-        }
 
         /// Active downloader registry — mirrors `LLMModelDescriptor.defaults`
         /// so the Model Status download buttons line up with the lineup
@@ -270,33 +232,6 @@ final class ModelDownloader {
                 return
             }
 
-            // SHA-256 integrity check (when an expected hash is declared
-            // for this descriptor). Catches MITM, CDN compromise, and
-            // upstream tampering. Skipped silently when no hash is
-            // declared — the size check above is the only guard.
-            if let expected = modelInfo.expectedSHA256?.lowercased() {
-                downloads[role] = DownloadState(
-                    status: .verifying,
-                    progress: 1.0,
-                    bytesWritten: Int64(downloadedSize),
-                    totalBytes: modelInfo.expectedSize,
-                    speed: "Verifying…"
-                )
-                let actual = ModelDownloader.sha256Hex(of: tempURL)
-                guard actual == expected else {
-                    try? FileManager.default.removeItem(at: tempURL)
-                    downloads[role] = DownloadState(
-                        status: .failed,
-                        progress: 0,
-                        bytesWritten: Int64(downloadedSize),
-                        totalBytes: modelInfo.expectedSize,
-                        speed: "Checksum mismatch — file was rejected"
-                    )
-                    activeTasks[role] = nil
-                    return
-                }
-            }
-
             // Remove existing file if present
             try? FileManager.default.removeItem(at: destinationURL)
             try FileManager.default.moveItem(at: tempURL, to: destinationURL)
@@ -363,33 +298,12 @@ final class ModelDownloader {
         let nsError = error as NSError
         return nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled
     }
-
-    /// Streaming SHA-256 of a file URL. Reads the file in 1 MB chunks
-    /// so a multi-GB model doesn't have to fit in RAM.
-    fileprivate static func sha256Hex(of url: URL) -> String? {
-        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
-        defer { try? handle.close() }
-        var hasher = SHA256()
-        while true {
-            let chunk = (try? handle.read(upToCount: 1 << 20)) ?? Data()
-            if chunk.isEmpty { break }
-            hasher.update(data: chunk)
-        }
-        return hasher.finalize().map { String(format: "%02x", $0) }.joined()
-    }
 }
 
 // MARK: - Download Delegate
 
 private class DownloadDelegate: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
     weak var downloader: ModelDownloader?
-    // URLSession dispatches delegate callbacks from a concurrent operation
-    // queue when `delegateQueue: nil`. With multiple roles downloading
-    // simultaneously (tagger + chat + embedding tier sweep), didWriteData
-    // can fire in parallel for different tasks. The dictionaries below
-    // would race; protect them with an NSLock to avoid allocator-level
-    // corruption (Swift dictionary CoW is not atomic).
-    private let progressLock = NSLock()
     private var lastUpdateTime: [String: Date] = [:]
     private var lastBytesWritten: [String: Int64] = [:]
 
@@ -432,23 +346,18 @@ private class DownloadDelegate: NSObject, URLSessionDownloadDelegate, @unchecked
         guard let roleStr = downloadTask.taskDescription,
               let role = LLMRole(rawValue: roleStr) else { return }
 
-        // Calculate speed (bytes per second). Read-modify-write under
-        // `progressLock` so concurrent delegate callbacks for different
-        // roles don't corrupt the dictionaries.
+        // Calculate speed (bytes per second)
         let now = Date()
         let key = roleStr
-        let speed: Double = progressLock.withLock {
-            let result: Double
-            if let lastTime = lastUpdateTime[key], let lastBytes = lastBytesWritten[key] {
-                let elapsed = now.timeIntervalSince(lastTime)
-                result = elapsed > 0 ? Double(totalBytesWritten - lastBytes) / elapsed : 0
-            } else {
-                result = 0
-            }
-            lastUpdateTime[key] = now
-            lastBytesWritten[key] = totalBytesWritten
-            return result
+        let speed: Double
+        if let lastTime = lastUpdateTime[key], let lastBytes = lastBytesWritten[key] {
+            let elapsed = now.timeIntervalSince(lastTime)
+            speed = elapsed > 0 ? Double(totalBytesWritten - lastBytes) / elapsed : 0
+        } else {
+            speed = 0
         }
+        lastUpdateTime[key] = now
+        lastBytesWritten[key] = totalBytesWritten
 
         Task { @MainActor in
             downloader?.didUpdateProgress(
@@ -459,19 +368,6 @@ private class DownloadDelegate: NSObject, URLSessionDownloadDelegate, @unchecked
                 speed: speed
             )
         }
-    }
-
-    /// Constrain follow-the-redirect to known Hugging Face hosts so a
-    /// hijacked 30x can't redirect us at an attacker-controlled origin
-    /// that serves a poisoned model.
-    func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
-        guard let url = request.url,
-              url.scheme?.lowercased() == "https",
-              isAllowedRedirectHost(url.host) else {
-            completionHandler(nil) // cancels the redirect; task fails
-            return
-        }
-        completionHandler(request)
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
