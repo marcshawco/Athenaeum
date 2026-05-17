@@ -179,8 +179,13 @@ final class DocumentVaultService {
     }
 
     func isInVault(_ url: URL) -> Bool {
-        let vaultPath = vaultURL.standardizedFileURL.path
-        let filePath = url.standardizedFileURL.path
+        // Resolve symlinks on BOTH sides before comparing. A bare path
+        // comparison lets an attacker drop a symlink into the vault whose
+        // target lives outside the vault — later "Delete" inside the app
+        // would silently trash whatever the symlink points at, since the
+        // sandbox grants vault-wide read-write.
+        let vaultPath = vaultURL.resolvingSymlinksInPath().standardizedFileURL.path
+        let filePath = url.resolvingSymlinksInPath().standardizedFileURL.path
         return filePath == vaultPath || filePath.hasPrefix(vaultPath + "/")
     }
 

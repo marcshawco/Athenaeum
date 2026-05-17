@@ -53,7 +53,7 @@ struct DocumentDetailView: View {
                 }
                 document.modifiedAt = .now
                 document.rebuildSearchableText()
-                try? modelContext.save()
+                modelContext.persist(context: "doc-detail-type-pick")
                 showTypePicker = false
             } onCancel: {
                 showTypePicker = false
@@ -317,7 +317,7 @@ struct DocumentDetailView: View {
                     document.documentDate = editedDocumentDate
                     document.modifiedAt = .now
                     document.rebuildSearchableText()
-                    try? modelContext.save()
+                    modelContext.persist(context: "doc-detail-date-save")
                     isEditingDocumentDate = false
                 }
                 .buttonStyle(.plain)
@@ -328,7 +328,7 @@ struct DocumentDetailView: View {
                     document.documentDate = nil
                     document.modifiedAt = .now
                     document.rebuildSearchableText()
-                    try? modelContext.save()
+                    modelContext.persist(context: "doc-detail-date-clear")
                     isEditingDocumentDate = false
                 }
                 .buttonStyle(.plain)
@@ -469,7 +469,7 @@ struct DocumentDetailView: View {
         document.title = trimmedTitle
         document.modifiedAt = .now
         document.rebuildSearchableText()
-        try? modelContext.save()
+        modelContext.persist(context: "doc-detail-rename")
         isEditing = false
     }
 
@@ -490,14 +490,14 @@ struct DocumentDetailView: View {
             document.tags?.append(tag)
         }
         document.rebuildSearchableText()
-        try? modelContext.save()
+        modelContext.persist(context: "doc-detail-add-tag")
         newTagName = ""
     }
 
     private func removeTag(_ tag: Tag) {
         document.tags?.removeAll { $0.name == tag.name }
         document.rebuildSearchableText()
-        try? modelContext.save()
+        modelContext.persist(context: "doc-detail-remove-tag")
     }
 
     private func normalizeTagName(_ rawName: String) -> String {

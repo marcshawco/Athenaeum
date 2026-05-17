@@ -47,7 +47,7 @@ final class BatchProcessor {
             }
         }
 
-        try? modelContext.save()
+        modelContext.persist(context: "batch-add-tag")
         progress = 1.0
     }
 
@@ -71,7 +71,7 @@ final class BatchProcessor {
             doc.rebuildSearchableText()
         }
 
-        try? modelContext.save()
+        modelContext.persist(context: "batch-remove-tag")
         progress = 1.0
     }
 
@@ -92,7 +92,7 @@ final class BatchProcessor {
             modelContext.delete(doc)
         }
 
-        try? modelContext.save()
+        modelContext.persist(context: "batch-delete")
         NotificationCenter.default.post(
             name: .documentsDeleted,
             object: nil,
@@ -114,7 +114,15 @@ final class BatchProcessor {
 
             let storedData = doc.storedFileURL.flatMap { try? Data(contentsOf: $0) }
             guard let data = storedData ?? doc.fileData else { continue }
-            let destination = directory.appendingPathComponent(doc.originalFilename)
+
+            // `originalFilename` is user-editable through later flows;
+            // strip any directory components so a name like
+            // "../../Library/foo.txt" can't escape the chosen export
+            // directory. The destination is sandbox-allowed (the user
+            // just picked it), so the kernel won't catch this for us.
+            let safeName = (doc.originalFilename as NSString).lastPathComponent
+            let resolvedName = safeName.isEmpty ? "document" : safeName
+            let destination = directory.appendingPathComponent(resolvedName)
 
             // Handle name collisions
             var finalURL = destination
@@ -152,7 +160,7 @@ final class BatchProcessor {
             doc.rebuildSearchableText()
         }
 
-        try? modelContext.save()
+        modelContext.persist(context: "batch-reprocess")
         progress = 1.0
     }
 

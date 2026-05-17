@@ -618,6 +618,20 @@ struct ChatView: View {
             load(conv)
             showHistoryPopover = false
         }
+        // Conversation rows in the history popover are custom-styled
+        // tappable surfaces; expose them as real interactive elements
+        // so Full Keyboard Access can tab through and VoiceOver
+        // announces them correctly.
+        .focusable(!isRenaming)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(Text(conv.title))
+        .accessibilityAddTraits(isCurrent ? [.isButton, .isSelected] : .isButton)
+        .onKeyPress(.return) {
+            guard !isRenaming else { return .ignored }
+            load(conv)
+            showHistoryPopover = false
+            return .handled
+        }
         .contextMenu {
             Button {
                 renameTargetID = conv.id
@@ -649,7 +663,7 @@ struct ChatView: View {
         }
         let conv = ChatConversation(title: "New chat")
         modelContext.insert(conv)
-        try? modelContext.save()
+        modelContext.persist(context: "chat-new-conversation")
         currentConversationID = conv.id
         storedChatIDRaw = conv.id.uuidString
         return conv
@@ -689,7 +703,7 @@ struct ChatView: View {
            let firstUser = messages.first(where: { $0.role == .user })?.content {
             conv.title = String(firstUser.prefix(60))
         }
-        try? modelContext.save()
+        modelContext.persist(context: "chat-save")
     }
 
     /// Reset transient state and load a persisted conversation's messages
@@ -738,7 +752,7 @@ struct ChatView: View {
         if let id = currentConversationID,
            let conv = conversations.first(where: { $0.id == id }) {
             modelContext.delete(conv)
-            try? modelContext.save()
+            modelContext.persist(context: "chat-clear-current")
         }
         stopGeneration(keepingPartialResponse: false)
         messages.removeAll()
@@ -754,7 +768,7 @@ struct ChatView: View {
     private func delete(_ conv: ChatConversation) {
         let wasCurrent = (currentConversationID == conv.id)
         modelContext.delete(conv)
-        try? modelContext.save()
+        modelContext.persist(context: "chat-delete")
         if wasCurrent { startNewConversation() }
     }
 
@@ -763,13 +777,13 @@ struct ChatView: View {
         copy.messagesJSON = conv.messagesJSON
         copy.modifiedAt = .now
         modelContext.insert(copy)
-        try? modelContext.save()
+        modelContext.persist(context: "chat-duplicate")
     }
 
     private func commitRename(_ conv: ChatConversation) {
         let trimmed = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmed.isEmpty { conv.title = trimmed }
-        try? modelContext.save()
+        modelContext.persist(context: "chat-rename")
         renameTargetID = nil
     }
 

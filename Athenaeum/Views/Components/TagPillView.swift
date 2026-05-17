@@ -44,5 +44,29 @@ struct TagPillView: View {
         )
         .contentShape(Capsule())
         .onTapGesture { onTap?() }
+        // Accessibility: the visual is custom-styled rather than a SwiftUI
+        // Button, but it IS interactive when `onTap` is bound. Surface
+        // that to VoiceOver + Full Keyboard Access.
+        .modifier(TagPillAccessibilityModifier(name: name, isSelected: isSelected, isInteractive: onTap != nil))
+    }
+}
+
+private struct TagPillAccessibilityModifier: ViewModifier {
+    let name: String
+    let isSelected: Bool
+    let isInteractive: Bool
+
+    func body(content: Content) -> some View {
+        if isInteractive {
+            content
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(Text("Tag \(name)"))
+                .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+                .focusable()
+        } else {
+            content
+                .accessibilityLabel(Text("Tag \(name)"))
+                .accessibilityAddTraits(isSelected ? .isSelected : [])
+        }
     }
 }

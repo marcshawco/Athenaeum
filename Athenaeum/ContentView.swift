@@ -39,7 +39,21 @@ struct ContentView: View {
     @State private var aiRenameSuggestions: [AIRenameSuggestion] = []
     @State private var isGeneratingRenames = false
 
+    /// Latest SwiftData save failure surfaced from `.modelContextSaveFailed`.
+    /// `nil` means no failure to show. Set by the notification observer;
+    /// rendered as a dismissable banner; auto-cleared after a few seconds.
+    @State private var saveFailureMessage: String?
+
+    // The body's modifier chain (19 `.onReceive` + 2 `.sheet` + 1
+    // `.onAppear`) blew past Swift's type-checker timeout. Splitting
+    // into stepwise `some View` helpers — each adding a handful of
+    // modifiers and yielding an opaque type — lets the solver chew
+    // through each chunk independently.
     var body: some View {
+        bodyWithSettingsSheet
+    }
+
+    private var bodyRoot: some View {
         Group {
             if !hasCompletedOnboarding {
                 OnboardingView()
@@ -52,83 +66,109 @@ struct ContentView: View {
             // Sync column visibility with persisted panel preference on launch
             columnVisibility = showDetailPanel ? .all : .doubleColumn
         }
-        .onReceive(NotificationCenter.default.publisher(for: .importDocuments)) { _ in
-            openFilePicker()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .scanFolderForImport)) { _ in
-            openFolderForImport()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .rebuildVectorIndex)) { _ in
-            rebuildVectorIndex()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .autoScanFoldersDidChange)) { _ in
-            autoScanCoordinator?.restart()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .selectDocumentByID)) { note in
-            guard let docID = note.userInfo?["documentID"] as? UUID else { return }
-            jumpToDocument(id: docID)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .closeInspector)) { _ in
-            showDetailPanel = false
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .aiRenameDocuments)) { note in
-            guard let ids = note.userInfo?["documentIDs"] as? [UUID] else { return }
-            startAIRename(forDocumentIDs: ids)
-        }
-        .sheet(isPresented: Binding(
-            get: { !aiRenameSuggestions.isEmpty || isGeneratingRenames },
-            set: { if !$0 { aiRenameSuggestions.removeAll(); isGeneratingRenames = false } }
-        )) {
-            AIRenameSheet(
-                suggestions: $aiRenameSuggestions,
-                isLoading: isGeneratingRenames,
-                onApplyAll: applyAIRenames,
-                onCancel: {
-                    aiRenameSuggestions.removeAll()
-                    isGeneratingRenames = false
-                }
-            )
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .openSettings)) { _ in
-            showSettings = true
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .reprocessDocuments)) { note in
-            guard let docID = note.userInfo?["documentID"] as? UUID,
-                  let processor else { return }
-            let fetch = FetchDescriptor<Document>(
-                predicate: #Predicate<Document> { $0.id == docID }
-            )
-            if let doc = try? modelContext.fetch(fetch).first {
-                Task { await processor.reprocessDocuments([doc]) }
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .documentsDeleted)) { note in
-            guard let docIDs = note.userInfo?["documentIDs"] as? [UUID] else { return }
-            removeDeletedDocumentsFromUI(docIDs)
+    }
 
-            guard let ragService else { return }
-            Task {
-                for docID in docIDs {
-                    try? await ragService.removeDocument(id: docID)
+    private var bodyWithImportObservers: some View {
+        bodyRoot
+            .onReceive(NotificationCenter.default.publisher(for: .importDocuments)) { _ in
+                openFilePicker()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .scanFolderForImport)) { _ in
+                openFolderForImport()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .rebuildVectorIndex)) { _ in
+                rebuildVectorIndex()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .autoScanFoldersDidChange)) { _ in
+                autoScanCoordinator?.restart()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .selectDocumentByID)) { note in
+                guard let docID = note.userInfo?["documentID"] as? UUID else { return }
+                jumpToDocument(id: docID)
+            }
+    }
+
+    private var bodyWithRenameSheet: some View {
+        bodyWithImportObservers
+            .onReceive(NotificationCenter.default.publisher(for: .closeInspector)) { _ in
+                showDetailPanel = false
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .aiRenameDocuments)) { note in
+                guard let ids = note.userInfo?["documentIDs"] as? [UUID] else { return }
+                startAIRename(forDocumentIDs: ids)
+            }
+            .sheet(isPresented: Binding(
+                get: { !aiRenameSuggestions.isEmpty || isGeneratingRenames },
+                set: { if !$0 { aiRenameSuggestions.removeAll(); isGeneratingRenames = false } }
+            )) {
+                AIRenameSheet(
+                    suggestions: $aiRenameSuggestions,
+                    isLoading: isGeneratingRenames,
+                    onApplyAll: applyAIRenames,
+                    onCancel: {
+                        aiRenameSuggestions.removeAll()
+                        isGeneratingRenames = false
+                    }
+                )
+            }
+    }
+
+    private var bodyWithDocumentObservers: some View {
+        bodyWithRenameSheet
+            .onReceive(NotificationCenter.default.publisher(for: .openSettings)) { _ in
+                showSettings = true
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .reprocessDocuments)) { note in
+                guard let docID = note.userInfo?["documentID"] as? UUID,
+                      let processor else { return }
+                let fetch = FetchDescriptor<Document>(
+                    predicate: #Predicate<Document> { $0.id == docID }
+                )
+                if let doc = try? modelContext.fetch(fetch).first {
+                    Task { await processor.reprocessDocuments([doc]) }
                 }
             }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .toggleDocumentPreviewPane)) { _ in
-            togglePreviewPane()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .scanDocumentVault)) { _ in
-            scanDocumentVault(showNotification: true, announceNoChanges: true)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: DocumentVaultService.vaultDidChangeNotification)) { _ in
-            restartVaultMonitor()
-            scanDocumentVault(showNotification: true, announceNoChanges: true)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .modelsDidChange)) { _ in
-            modelManager.scanForModels()
-        }
-        .sheet(isPresented: $showSettings) {
-            SettingsView(modelManager: modelManager, autoScanRegistry: autoScanRegistry)
-        }
+            .onReceive(NotificationCenter.default.publisher(for: .documentsDeleted)) { note in
+                guard let docIDs = note.userInfo?["documentIDs"] as? [UUID] else { return }
+                removeDeletedDocumentsFromUI(docIDs)
+                guard let ragService else { return }
+                Task {
+                    for docID in docIDs {
+                        try? await ragService.removeDocument(id: docID)
+                    }
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .toggleDocumentPreviewPane)) { _ in
+                togglePreviewPane()
+            }
+    }
+
+    private var bodyWithVaultObservers: some View {
+        bodyWithDocumentObservers
+            .onReceive(NotificationCenter.default.publisher(for: .scanDocumentVault)) { _ in
+                scanDocumentVault(showNotification: true, announceNoChanges: true)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: DocumentVaultService.vaultDidChangeNotification)) { _ in
+                restartVaultMonitor()
+                scanDocumentVault(showNotification: true, announceNoChanges: true)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .modelsDidChange)) { _ in
+                modelManager.scanForModels()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .hardwareTierDidChange)) { _ in
+                // Mark every loaded LlamaContext stale so the next inference
+                // request unloads + reloads with the new tier's n_ctx and
+                // GPU-layer count. Active streams finish on the old context
+                // first (the actor's serial executor guarantees ordering).
+                llmService?.markAllContextsStale()
+            }
+    }
+
+    private var bodyWithSettingsSheet: some View {
+        bodyWithVaultObservers
+            .sheet(isPresented: $showSettings) {
+                SettingsView(modelManager: modelManager, autoScanRegistry: autoScanRegistry)
+            }
     }
 
     // MARK: - Main Content
@@ -183,6 +223,12 @@ struct ContentView: View {
         .overlay(alignment: .top) {
             reindexBanner
         }
+        .overlay(alignment: .top) {
+            saveFailureBanner
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .modelContextSaveFailed)) { note in
+            handleSaveFailure(note: note)
+        }
         .spacePreviewShortcut()
         .task {
             await refreshReindexCandidates()
@@ -202,6 +248,7 @@ struct ContentView: View {
                 Image(systemName: "sparkle.magnifyingglass")
                     .font(.system(size: 11))
                     .foregroundStyle(Japandi.Colors.accentFallback)
+                    .accessibilityHidden(true)
                 Text("\(reindexCandidates) document\(reindexCandidates == 1 ? "" : "s") not yet indexed for search.")
                     .font(Japandi.Typography.caption)
                     .foregroundStyle(Japandi.Colors.textSecondaryFB)
@@ -463,20 +510,138 @@ struct ContentView: View {
     @ViewBuilder
     private var notificationBanner: some View {
         if showImportNotification {
-            HStack(spacing: Japandi.Spacing.xs) {
-                Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(Japandi.Colors.accentFallback)
-                Text(importNotificationText)
-                    .font(Japandi.Typography.body)
-                    .foregroundStyle(Japandi.Colors.textPrimaryFB)
-            }
+            notificationBannerBody
+        }
+    }
+
+    /// Extracted from the `if`-guarded `@ViewBuilder` above because the
+    /// inline expression — Group-with-if/else inside `.background` plus
+    /// a ternary inside `.transition` plus 4 chained padding/clip/shadow
+    /// modifiers — tripped Swift's type-checker timeout.
+    private var notificationBannerBody: some View {
+        HStack(spacing: Japandi.Spacing.xs) {
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(Japandi.Colors.accentFallback)
+                .accessibilityHidden(true)
+            Text(importNotificationText)
+                .font(Japandi.Typography.body)
+                .foregroundStyle(Japandi.Colors.textPrimaryFB)
+        }
+        .padding(.horizontal, Japandi.Spacing.md)
+        .padding(.vertical, Japandi.Spacing.sm)
+        .background(notificationBannerBackground)
+        .clipShape(Capsule())
+        .japandiShadow(Japandi.Shadow.card)
+        .padding(.bottom, Japandi.Spacing.lg)
+        .transition(notificationBannerTransition)
+    }
+
+    /// Respect Reduce Transparency: drop the blur material for a solid
+    /// surface fill so the banner doesn't flicker when transparency is
+    /// off.
+    @ViewBuilder
+    private var notificationBannerBackground: some View {
+        if Japandi.Transparency.shouldReduce {
+            Japandi.Colors.surfaceRaisedFB
+        } else {
+            Color.clear.background(.ultraThinMaterial)
+        }
+    }
+
+    private var notificationBannerTransition: AnyTransition {
+        if Japandi.Transparency.shouldReduce {
+            return .opacity
+        }
+        return .move(edge: .bottom).combined(with: .opacity)
+    }
+
+    /// Top-edge banner shown when a SwiftData save fails. Tappable
+    /// dismiss; also auto-clears 6 s after appearing.
+    ///
+    /// Split into helpers because a single inline expression with the
+    /// full modifier chain (background + overlay + shadow + padding +
+    /// frame + ternary transition + a11y) tripped Swift's type-checker
+    /// timeout in ContentView. Each helper returns a small `some View`
+    /// the checker can handle in isolation.
+    @ViewBuilder
+    private var saveFailureBanner: some View {
+        if let message = saveFailureMessage {
+            saveFailureBannerBody(message: message)
+        }
+    }
+
+    private func saveFailureBannerBody(message: String) -> some View {
+        saveFailureBannerRow(message: message)
             .padding(.horizontal, Japandi.Spacing.md)
             .padding(.vertical, Japandi.Spacing.sm)
-            .background(.ultraThinMaterial)
-            .clipShape(Capsule())
+            .background(saveFailureBannerBackground)
+            .overlay(saveFailureBannerBorder)
             .japandiShadow(Japandi.Shadow.card)
-            .padding(.bottom, Japandi.Spacing.lg)
-            .transition(.move(edge: .bottom).combined(with: .opacity))
+            .padding(.top, Japandi.Spacing.md)
+            .padding(.horizontal, Japandi.Spacing.md)
+            .frame(maxWidth: 480)
+            .transition(saveFailureBannerTransition)
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.isStaticText)
+    }
+
+    private func saveFailureBannerRow(message: String) -> some View {
+        HStack(spacing: Japandi.Spacing.xs) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(Japandi.Colors.destructiveFallback)
+                .accessibilityHidden(true)
+            Text(message)
+                .font(Japandi.Typography.body)
+                .foregroundStyle(Japandi.Colors.textPrimaryFB)
+            Spacer(minLength: Japandi.Spacing.sm)
+            saveFailureBannerDismissButton
+        }
+    }
+
+    private var saveFailureBannerDismissButton: some View {
+        Button {
+            withAnimation(Japandi.Motion.gentle) { saveFailureMessage = nil }
+        } label: {
+            Image(systemName: "xmark")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(Japandi.Colors.textTertiaryFB)
+                .accessibilityHidden(true)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Dismiss")
+    }
+
+    private var saveFailureBannerBackground: some View {
+        RoundedRectangle(cornerRadius: 12, style: .continuous)
+            .fill(Japandi.Colors.surfaceRaisedFB)
+    }
+
+    private var saveFailureBannerBorder: some View {
+        RoundedRectangle(cornerRadius: 12, style: .continuous)
+            .strokeBorder(Japandi.Colors.destructiveFallback.opacity(0.4), lineWidth: 0.5)
+    }
+
+    private var saveFailureBannerTransition: AnyTransition {
+        if Japandi.Transparency.shouldReduce {
+            return .opacity
+        }
+        return .move(edge: .top).combined(with: .opacity)
+    }
+
+    /// Read the failure from the notification, format a short message,
+    /// and schedule auto-dismiss.
+    private func handleSaveFailure(note: Notification) {
+        guard let error = note.userInfo?["error"] as? Error else { return }
+        let tag = note.userInfo?["context"] as? String
+        let shortError = (error as NSError).localizedDescription
+        let prefix = tag.map { "Couldn't save (\($0))" } ?? "Couldn't save"
+        let message = "\(prefix): \(shortError)"
+        withAnimation(Japandi.Motion.gentle) { saveFailureMessage = message }
+        Task {
+            try? await Task.sleep(nanoseconds: 6_000_000_000)
+            await MainActor.run {
+                withAnimation(Japandi.Motion.gentle) { saveFailureMessage = nil }
+            }
         }
     }
 
@@ -487,6 +652,7 @@ struct ContentView: View {
             Image(systemName: icon)
                 .font(.system(size: 40, weight: .ultraLight))
                 .foregroundStyle(Japandi.Colors.textTertiaryFB)
+                .accessibilityHidden(true)
             Text(text)
                 .font(Japandi.Typography.body)
                 .foregroundStyle(Japandi.Colors.textTertiaryFB)
@@ -511,7 +677,9 @@ struct ContentView: View {
         let engine = InferenceEngine(rawValue: inferenceEngineRaw) ?? .llamaCpp
         if engine == .mlx && mlxManager.installedBundles.isEmpty {
             // Surface a hint that the bundle hasn't been downloaded yet.
-            NSLog("[Athenaeum] MLX engine selected but no bundle installed; falling back to llama.cpp")
+            #if DEBUG
+            NSLog("[ATHENS] MLX engine selected but no bundle installed; falling back to llama.cpp")
+            #endif
         }
         let service = LocalLLMService(modelManager: modelManager)
         llmService = service
@@ -557,7 +725,9 @@ struct ContentView: View {
         let currentDim = await vectorStore.currentDimensions
         let targetDim = RAGService.embeddingDimension
         guard let currentDim, currentDim != targetDim else { return }
-        NSLog("[Athenaeum] Vector store dimension mismatch (\(currentDim) → \(targetDim)). Wiping and re-indexing.")
+        #if DEBUG
+        NSLog("[ATHENS] Vector store dimension mismatch (\(currentDim) → \(targetDim)). Wiping and re-indexing.")
+        #endif
         try? await vectorStore.wipe()
         await showBanner("Embedding model upgraded — re-indexing your library.")
     }
@@ -608,7 +778,7 @@ struct ContentView: View {
         }
 
         if repairedCount > 0 || docs.contains(where: { $0.processingError != nil }) {
-            try? modelContext.save()
+            modelContext.persist(context: "vault-repair")
         }
         if repairedCount > 0 {
             await showBanner("\(repairedCount) original file\(repairedCount == 1 ? "" : "s") restored to vault")

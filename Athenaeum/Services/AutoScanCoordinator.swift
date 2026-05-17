@@ -16,20 +16,76 @@ final class AutoScanCoordinator {
     private let registry: AutoScanRegistry
     private weak var processor: DocumentProcessor?
 
-    private var stream: FSEventStreamRef?
+    /// FSEvents handle + security-scoped resources live on a nonisolated
+    /// helper so we can release them from `deinit` without touching
+    /// MainActor-isolated stored properties (which is a hard error under
+    /// Swift 6 strict concurrency).
+    private let streamHolder = StreamHolder()
+
     private var debounceWorkItem: DispatchWorkItem?
-    private var securityScopedURLs: [URL] = []
 
     private let eventQueue = DispatchQueue(label: "app.athenaeum.auto-scan")
     private let latency: CFTimeInterval = 2.0
     private let debounceDelay: TimeInterval = 2.5
 
-    /// Files already handed to the processor in this session, identified by
-    /// `path|mtime` so a touched-but-unchanged file doesn't get re-imported.
+    /// Cap on the in-session fingerprint set so a long-running install
+    /// watching busy folders doesn't grow this dictionary unboundedly.
+    /// LRU isn't worth the complexity here — when we hit the cap we
+    /// simply drop the oldest insertions (Set has no insertion order,
+    /// so we keep an array sidecar for FIFO eviction).
+    private static let maxFingerprints = 50_000
     private var seenFingerprints: Set<String> = []
+    private var fingerprintInsertionOrder: [String] = []
 
     private(set) var isRunning = false
     private(set) var lastError: String?
+
+    /// Nonisolated holder for the C-pointer FSEvents stream and the
+    /// security-scoped URLs we need to release together. Owns its own
+    /// `NSLock` so `release()` can run from a nonisolated `deinit`.
+    ///
+    /// The class itself and every method are `nonisolated` so the
+    /// MainActor-isolated `AutoScanCoordinator` (and its nonisolated
+    /// deinit) can both invoke them without a cross-actor hop. With
+    /// the project default `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`,
+    /// nested classes would otherwise inherit the enclosing type's
+    /// isolation.
+    fileprivate final class StreamHolder: @unchecked Sendable {
+        // The project default `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`
+        // pushes `@MainActor` onto nested types and their stored
+        // properties. The methods can opt out with `nonisolated`, but
+        // stored properties need `nonisolated(unsafe)` — the NSLock
+        // below is the actual synchronization guarantee.
+        nonisolated(unsafe) private var stream: FSEventStreamRef?
+        nonisolated(unsafe) private var securityScopedURLs: [URL] = []
+        private let lock = NSLock()
+
+        nonisolated init() {}
+
+        nonisolated func set(stream: FSEventStreamRef?, securityScopedURLs: [URL]) {
+            lock.withLock {
+                self.stream = stream
+                self.securityScopedURLs = securityScopedURLs
+            }
+        }
+
+        nonisolated var hasStream: Bool {
+            lock.withLock { stream != nil }
+        }
+
+        nonisolated func release() {
+            lock.withLock {
+                if let s = stream {
+                    FSEventStreamStop(s)
+                    FSEventStreamInvalidate(s)
+                    FSEventStreamRelease(s)
+                }
+                stream = nil
+                for u in securityScopedURLs { u.stopAccessingSecurityScopedResource() }
+                securityScopedURLs.removeAll()
+            }
+        }
+    }
 
     init(registry: AutoScanRegistry) {
         self.registry = registry
@@ -52,8 +108,13 @@ final class AutoScanCoordinator {
     }
 
     private func start(urls: [URL]) {
-        securityScopedURLs = urls
-        for url in urls { _ = url.startAccessingSecurityScopedResource() }
+        // Track each successful start-access so stop() pairs each one
+        // with a matching stopAccessingSecurityScopedResource() — the
+        // OS-level retain count is per-call, not per-URL.
+        var heldURLs: [URL] = []
+        for url in urls where url.startAccessingSecurityScopedResource() {
+            heldURLs.append(url)
+        }
 
         var context = FSEventStreamContext(
             version: 0,
@@ -73,18 +134,18 @@ final class AutoScanCoordinator {
             flags
         ) else {
             lastError = "Could not create auto-scan watcher."
-            releaseSecurityScopes()
+            for u in heldURLs { u.stopAccessingSecurityScopedResource() }
             return
         }
         FSEventStreamSetDispatchQueue(stream, eventQueue)
         guard FSEventStreamStart(stream) else {
             FSEventStreamInvalidate(stream)
             FSEventStreamRelease(stream)
-            releaseSecurityScopes()
+            for u in heldURLs { u.stopAccessingSecurityScopedResource() }
             lastError = "Could not start auto-scan watcher."
             return
         }
-        self.stream = stream
+        streamHolder.set(stream: stream, securityScopedURLs: heldURLs)
         isRunning = true
         lastError = nil
     }
@@ -92,14 +153,8 @@ final class AutoScanCoordinator {
     func stop() {
         debounceWorkItem?.cancel()
         debounceWorkItem = nil
-        if let stream {
-            FSEventStreamStop(stream)
-            FSEventStreamInvalidate(stream)
-            FSEventStreamRelease(stream)
-        }
-        stream = nil
+        streamHolder.release()
         isRunning = false
-        releaseSecurityScopes()
     }
 
     /// Called from the FSEvents callback (background queue). Schedules a
@@ -132,18 +187,22 @@ final class AutoScanCoordinator {
 
             guard let enumerator = FileManager.default.enumerator(
                 at: folderURL,
-                includingPropertiesForKeys: [.isRegularFileKey, .contentModificationDateKey],
+                includingPropertiesForKeys: [.isRegularFileKey, .contentModificationDateKey, .isSymbolicLinkKey],
                 options: [.skipsHiddenFiles, .skipsPackageDescendants]
             ) else { continue }
 
             for case let fileURL as URL in enumerator {
-                let values = try? fileURL.resourceValues(forKeys: [.isRegularFileKey, .contentModificationDateKey])
+                let values = try? fileURL.resourceValues(forKeys: [.isRegularFileKey, .contentModificationDateKey, .isSymbolicLinkKey])
+                // Skip symlinks defensively — a hostile auto-scan folder
+                // could otherwise expose anything reachable via a link
+                // (e.g. ~/Library/Mail) to the import pipeline.
+                guard values?.isSymbolicLink != true else { continue }
                 guard values?.isRegularFile == true else { continue }
                 guard allowed.contains(fileURL.pathExtension.lowercased()) else { continue }
                 let mtime = values?.contentModificationDate?.timeIntervalSince1970 ?? 0
                 let fingerprint = "\(fileURL.standardizedFileURL.path)|\(Int(mtime))"
                 if seenFingerprints.contains(fingerprint) { continue }
-                seenFingerprints.insert(fingerprint)
+                rememberFingerprint(fingerprint)
                 freshURLs.append(fileURL)
             }
         }
@@ -154,19 +213,24 @@ final class AutoScanCoordinator {
         }
     }
 
-    private func releaseSecurityScopes() {
-        for url in securityScopedURLs { url.stopAccessingSecurityScopedResource() }
-        securityScopedURLs.removeAll()
+    private func rememberFingerprint(_ fingerprint: String) {
+        seenFingerprints.insert(fingerprint)
+        fingerprintInsertionOrder.append(fingerprint)
+        if fingerprintInsertionOrder.count > Self.maxFingerprints {
+            // Drop the oldest 10% in one pass so this isn't every call.
+            let drop = Self.maxFingerprints / 10
+            let evicted = fingerprintInsertionOrder.prefix(drop)
+            for fp in evicted { seenFingerprints.remove(fp) }
+            fingerprintInsertionOrder.removeFirst(drop)
+        }
     }
 
     deinit {
-        // Stop stream synchronously without main-actor jump.
-        if let stream {
-            FSEventStreamStop(stream)
-            FSEventStreamInvalidate(stream)
-            FSEventStreamRelease(stream)
-        }
-        for url in securityScopedURLs { url.stopAccessingSecurityScopedResource() }
+        // `streamHolder` is a separate class (not MainActor-isolated)
+        // so calling release() here is safe under Swift 6's stricter
+        // nonisolated-deinit rules. No MainActor stored properties are
+        // touched from this deinit.
+        streamHolder.release()
     }
 
     // MARK: - Supported file types

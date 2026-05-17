@@ -1,10 +1,28 @@
 # ATHENS
 
-ATHENS (formerly Athenaeum) is a private, local-first macOS document library. It imports personal and business documents into a Finder-visible vault, extracts searchable text, applies local AI-assisted metadata, and lets you ask questions across the archive with on-device retrieval-augmented generation.
+ATHENS (formerly Athenaeum) is a private, local-first macOS document library. It imports personal and business documents into a sandboxed vault, extracts searchable text, applies local AI-assisted metadata, and lets you ask questions across the archive with on-device retrieval-augmented generation.
 
 The app is built with SwiftUI, SwiftData, Vision, PDFKit, and a bundled llama.cpp framework for GGUF model inference. It is designed around the idea that sensitive documents should stay on the Mac.
 
-> **2.2.0 — rebrand to ATHENS.** All user-facing labels, the Dock display name, app icon, and brand marks now use the new identity. On-disk storage paths (the vault folder, Application Support subfolder, and bundle identifier) are unchanged so existing libraries keep working without migration.
+**Privacy policy:** [shawhause.com/athens-privacy.html](https://shawhause.com/athens-privacy.html)
+
+> **2.4.0 / 2.4.1 — Mac App Store readiness sweep.**
+>
+> Submission gates: bundle identifier moved from the placeholder `marcshaw.Athenaeum` to the reverse-DNS `com.shawhause.athens`; new `PrivacyInfo.xcprivacy` declares the two required-reason APIs the app actually uses (UserDefaults, FileTimestamp); `CFBundleDisplayName` and `NSHumanReadableCopyright` now live in `Info.plist` where they're actually picked up; `LSApplicationCategoryType` reconciled to `productivity`; `MACOSX_DEPLOYMENT_TARGET` widened from 15.7 to 15.0; unused `files.downloads.read-write` and `REGISTER_APP_GROUPS` entitlements dropped.
+>
+> Crash bugs: `LlamaContext.load` now defer-rolls back partial model/sampler allocations on a thrown step; the `batch.seq_id[idx]!` force-unwrap is gone; `generateStream`'s producer task is gated by an in-flight counter so `unload()` waits for it before freeing pointers; `llama_backend_init` is once-per-process; `ModelDownloader.DownloadDelegate` locks its concurrent dictionaries.
+>
+> Privacy regression closed: tagging-pipeline content (titles, summaries, correspondents) no longer mirrors to system-wide `NSLog` in release builds. The on-disk `tagger.log` stays (the published policy explicitly covers it; it never leaves the Mac) and now rotates at 2 MB. Hugging Face downloads pick up an HTTPS redirect-host allowlist (HF + `*.huggingface.co` / `*.hf.co` / `*.cloudfront.net`), a streaming SHA-256 verifier whose `expectedSHA256` is per-descriptor optional, and a 250 MB import-size cap. PDF OCR is bounded by page count (200) and per-page pixel area so a malicious PDF can't request a 400 GB bitmap.
+>
+> Hardening: `DocumentVaultService.isInVault` resolves symlinks before containment-checking (a symlink dropped in the vault can no longer redirect a delete outside it); `BatchProcessor.exportDocuments` strips path components from user-editable filenames; `AutoScanCoordinator` filters symlinks during scan, bounds its fingerprint set at 50k entries, pairs every `startAccessingSecurityScopedResource` with a `stop`, and moves FSEvents teardown to a nonisolated holder so Swift 6 strict concurrency is happy.
+>
+> Code quality: `LocalLLMService` single-flight gates concurrent first-OCR callers so the 5 GB vision model isn't double-loaded; vault-path help copy corrected to reflect the sandboxed container (not the misleading `~/Documents/Athenaeum Library` claim); `ThumbnailGenerator` swapped its unbounded dictionary for `NSCache` (countLimit 512, ~256 MB totalCostLimit); `Localizable.xcstrings` scaffold added; the RAG system prompt now fences document context in `<document_context>` tags with explicit instructions to ignore embedded directives. Light-mode contrast bumped on the two color tokens that were failing WCAG AA (`textTertiaryFB` 3.4:1 → 4.6:1, `accentMutedFallback` 2.4:1 → 4.7:1). The asset catalog's misnamed `Destructive` (was blue) and `Success` (was a duplicate of AccentColor) colorsets now actually look destructive and successful.
+>
+> **Known remaining work for full MAS submission:** the embedded `llama.xcframework` is ad-hoc signed (`codesign -dvv` reports `Signature=adhoc, Identifier=stripped_lib`) — it must be re-signed with the developer team identity or re-built from source before archive upload, otherwise MAS validation will reject the embedded binary. SHA-256 values in `HFModelInfo.entries` are intentionally `nil` until the canonical model files are verified against the upstream Hugging Face repos. **Bundle ID change is breaking for existing installs** — the sandbox container path changes (`marcshaw.Athenaeum` → `com.shawhause.athens`), so any pre-2.4.0 user data needs to be re-imported.
+
+> **2.3.0 — tier-driven runtime + icon-picker polish.** The Hardware Tier picker now adapts both the *model lineup* and the *runtime shape* of every chat: chunk size, retrieval top-K, per-chunk and total prompt char budgets, retrieval over-fetch multiplier, per-document diversity cap, and the inference context window all reshape when the tier changes. The Settings icon picker shows a checkmark badge on the active variant, and the sidebar / settings header / onboarding brand mark all live-follow the user's pick.
+
+> **2.2.0 — rebrand to ATHENS.** All user-facing labels, the Dock display name, app icon, and brand marks now use the new identity. On-disk storage paths (the vault folder, Application Support subfolder, and bundle identifier are unchanged within a single bundle-ID major version) so existing libraries keep working without migration.
 
 ## What It Does
 
@@ -31,7 +49,6 @@ Athenaeum/
   Views/                      Sidebar, library, detail, chat, settings, onboarding
   Assets.xcassets/            App icon, brand marks, color assets
 
-Tools/                        Standalone smoke tests for vault/import/RAG behavior
 ATHENS Brand/                 Current brand kit (mark, wordmark, app icons, JSX source)
 Athenaeum Brand/              Archived previous brand kit (pre-2.2.0)
 llama.xcframework/            Bundled llama.cpp framework used by the app target
@@ -76,6 +93,19 @@ This is a documentation app, not a benchmark — ATHENS picks the lightest lineu
 | **Workstation** | ≥ 40 GB | Qwen 2.5 14B Instruct Q4_K_M | Nomic Embed v1.5 | MiniCPM-V 2.6 Q4_K_M | ~14 GB |
 
 The user can override the auto-detected tier in **Settings → AI Models** (Auto-detect / Compact / Standard / Performance / Workstation). Model Status surfaces the active tier with a rationale, the detected RAM, and the model tiles for the chosen lineup.
+
+Each tier also carries a **`HardwareTier.Tunables` block** (chunk size, chunk overlap, RAG top-K, per-chunk char budget, total prompt char budget, retrieval over-fetch multiplier, per-doc diversity cap, n_ctx, GPU layer count). Switching tiers writes the indexing / retrieval / inference values into `UserDefaults`, and `RAGService` reads the prompt-side budgets directly from `HardwareProfiler.activeTunables` on every call.
+
+Loaded `LlamaContext` actors hold their `n_ctx` captured at init time, so the inference context window can't change on a live actor. `LocalLLMService.markAllContextsStale()` (called by `ContentView` on `.hardwareTierDidChange`) sets a flag; the next call to `contextForRole(_:)` or `generateFromImage(...)` runs `purgeStaleContextsIfNeeded()`, which unloads every cached context (deduped so shared tagger+chat contexts unload exactly once) and lets the load path re-init with the fresh config. Active streams keep running on the old actor — Swift actor serial executors guarantee the unload waits for in-flight work. Net UX: indexing and retrieval shape change immediately; the first chat turn after a tier change costs a 5–15 s model warmup, then everything tracks.
+
+| Tier | n_ctx | Chunk / overlap | top-K | per-chunk chars | total prompt chars | over-fetch × | per-doc cap |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| **Compact**     | 4096 | 384 / 48  | 4  | 800  | 4 500  | 5× | 2 |
+| **Standard**    | 4096 | 512 / 64  | 6  | 1 200 | 8 000  | 6× | 3 |
+| **Performance** | 8192 | 640 / 96  | 8  | 1 500 | 12 000 | 6× | 3 |
+| **Workstation** | 8192 | 768 / 128 | 10 | 1 800 | 16 000 | 8× | 4 |
+
+On first launch the active tier's tunables are written once (gated by `didApplyInitialHardwareTunables` in defaults) so a fresh install starts at the right shape without the user opening Settings.
 
 ### Per-role model duties
 

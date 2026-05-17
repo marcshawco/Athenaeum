@@ -17,6 +17,12 @@ struct SidebarView: View {
     @AppStorage("pinnedTags") private var pinnedTagsRaw: String = ""
     static let pinnedTagsCap = 10
 
+    /// Lets the corner brand mark follow the user's icon-variant choice.
+    @AppStorage("appIconVariant") private var appIconVariantRaw: String = AppIconVariant.ink.rawValue
+    private var brandMarkAsset: String {
+        (AppIconVariant(rawValue: appIconVariantRaw) ?? .ink).assetName
+    }
+
     @State private var showFolderEditor = false
     @State private var folderEditTarget: Folder?
     @State private var folderDeleteTarget: Folder?
@@ -363,7 +369,7 @@ struct SidebarView: View {
         ) { folder in
             Button("Delete", role: .destructive) {
                 modelContext.delete(folder)
-                try? modelContext.save()
+                modelContext.persist(context: "sidebar-folder-delete")
                 folderDeleteTarget = nil
             }
             Button("Cancel", role: .cancel) { folderDeleteTarget = nil }
@@ -375,7 +381,7 @@ struct SidebarView: View {
         .safeAreaInset(edge: .top) {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: Japandi.Spacing.sm) {
-                    Image("BrandMark")
+                    Image(brandMarkAsset)
                         .resizable()
                         .interpolation(.high)
                         .frame(width: 30, height: 30)

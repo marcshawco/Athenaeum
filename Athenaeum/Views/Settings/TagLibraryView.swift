@@ -92,7 +92,7 @@ struct TagLibraryView: View {
         for tag in targets {
             modelContext.delete(tag)
         }
-        try? modelContext.save()
+        modelContext.persist(context: "tag-library-prune-unused")
         NotificationCenter.default.post(name: .tagsDidChange, object: nil)
     }
 
@@ -251,7 +251,7 @@ struct TagLibraryView: View {
         } else {
             tag.name = new
         }
-        try? modelContext.save()
+        modelContext.persist(context: "tag-library-rename")
         renameTarget = nil
         NotificationCenter.default.post(name: .tagsDidChange, object: nil)
     }
@@ -259,7 +259,7 @@ struct TagLibraryView: View {
     private func deleteTag(_ tag: Tag) {
         // Remove the tag entirely; SwiftData detaches it from documents.
         modelContext.delete(tag)
-        try? modelContext.save()
+        modelContext.persist(context: "tag-library-delete")
         NotificationCenter.default.post(name: .tagsDidChange, object: nil)
     }
 }
