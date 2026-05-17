@@ -771,21 +771,35 @@ private extension String {
 
 // MARK: - Tagger Log
 //
-// Writes a permanent log of every tagging attempt to
+// Writes tagging-pipeline diagnostics to
 // `~/Library/Containers/<bundle-id>/Data/Library/Application Support/Athenaeum/tagger.log`
-// (or the equivalent unsandboxed path). Survives across launches and
-// doesn't depend on Console.app's filtering. Console.app + NSLog can
-// hide Info-level messages by default; a plain text file always works.
+// for debugging tag quality. The privacy policy explicitly covers this
+// file: it stays on the user's Mac and is never transmitted.
 //
-// Mirrored from every `tlog(...)` call alongside the existing NSLog so
-// you can use either Console, `log stream`, or just open the file.
+// The on-disk log is sandboxed (only this app can read it), capped via
+// rotation, and persists across launches.
+//
+// **Privacy-sensitive note about NSLog:** macOS `NSLog` is system-wide
+// — content shows up in Console.app, `log stream`, and any sysdiagnose
+// capture for **any** process to read. Mirroring document content to
+// NSLog therefore contradicts the "data stays on your Mac and is not
+// linked to your identity" guarantee. NSLog is gated behind `#if DEBUG`
+// so release builds (TestFlight + App Store) only ever touch the
+// per-user on-disk log.
 
 enum TaggerLog {
+    /// Cap the on-disk log so a long-running install doesn't accumulate
+    /// gigabytes of past tagging traces. When the file exceeds this size
+    /// we rotate by dropping the first ~50% of lines.
+    private static let maxBytes: Int = 2 * 1024 * 1024  // 2 MB
+
     private static let formatter: ISO8601DateFormatter = {
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return f
     }()
+
+    private static let writeQueue = DispatchQueue(label: "athens.tagger-log.writer")
 
     static var logFileURL: URL {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
@@ -798,22 +812,41 @@ enum TaggerLog {
         let line = "[\(formatter.string(from: Date()))] \(message)\n"
         guard let data = line.data(using: .utf8) else { return }
         let url = logFileURL
-        if FileManager.default.fileExists(atPath: url.path) {
-            if let handle = try? FileHandle(forWritingTo: url) {
-                defer { try? handle.close() }
-                _ = try? handle.seekToEnd()
-                try? handle.write(contentsOf: data)
+        writeQueue.async {
+            if FileManager.default.fileExists(atPath: url.path) {
+                if let handle = try? FileHandle(forWritingTo: url) {
+                    defer { try? handle.close() }
+                    _ = try? handle.seekToEnd()
+                    try? handle.write(contentsOf: data)
+                }
+                rotateIfNeeded(at: url)
+            } else {
+                try? data.write(to: url)
             }
-        } else {
-            try? data.write(to: url)
         }
+    }
+
+    /// Halve the file in-place when it exceeds `maxBytes`. We read,
+    /// drop the first ~50% by newline, and rewrite. Single-process
+    /// app so no locking concerns.
+    private static func rotateIfNeeded(at url: URL) {
+        guard let size = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? Int,
+              size > maxBytes,
+              let data = try? Data(contentsOf: url),
+              let text = String(data: data, encoding: .utf8) else { return }
+        let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
+        let keep = lines.suffix(lines.count / 2).joined(separator: "\n")
+        try? Data(keep.utf8).write(to: url, options: .atomic)
     }
 }
 
-/// Tagger log helper — writes to both NSLog (so Console.app / `log stream`
-/// catch it) and the on-disk tagger.log file (so logs survive without any
-/// log-viewer gymnastics).
+/// Tagger log helper. Writes to the sandboxed on-disk log (privacy-OK
+/// per the policy: stays local, never transmitted) and, in DEBUG only,
+/// mirrors to NSLog for developer convenience. NSLog is system-wide on
+/// macOS, so release builds never put document content through it.
 func tlog(_ message: String) {
-    NSLog("[Athenaeum] %@", message)
+    #if DEBUG
+    NSLog("[ATHENS] %@", message)
+    #endif
     TaggerLog.append(message)
 }

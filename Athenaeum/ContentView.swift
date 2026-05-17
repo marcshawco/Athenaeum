@@ -518,7 +518,9 @@ struct ContentView: View {
         let engine = InferenceEngine(rawValue: inferenceEngineRaw) ?? .llamaCpp
         if engine == .mlx && mlxManager.installedBundles.isEmpty {
             // Surface a hint that the bundle hasn't been downloaded yet.
-            NSLog("[Athenaeum] MLX engine selected but no bundle installed; falling back to llama.cpp")
+            #if DEBUG
+            NSLog("[ATHENS] MLX engine selected but no bundle installed; falling back to llama.cpp")
+            #endif
         }
         let service = LocalLLMService(modelManager: modelManager)
         llmService = service
@@ -564,7 +566,9 @@ struct ContentView: View {
         let currentDim = await vectorStore.currentDimensions
         let targetDim = RAGService.embeddingDimension
         guard let currentDim, currentDim != targetDim else { return }
-        NSLog("[Athenaeum] Vector store dimension mismatch (\(currentDim) → \(targetDim)). Wiping and re-indexing.")
+        #if DEBUG
+        NSLog("[ATHENS] Vector store dimension mismatch (\(currentDim) → \(targetDim)). Wiping and re-indexing.")
+        #endif
         try? await vectorStore.wipe()
         await showBanner("Embedding model upgraded — re-indexing your library.")
     }

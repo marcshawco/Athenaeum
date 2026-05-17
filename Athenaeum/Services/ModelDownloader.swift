@@ -304,6 +304,13 @@ final class ModelDownloader {
 
 private class DownloadDelegate: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
     weak var downloader: ModelDownloader?
+    // URLSession dispatches delegate callbacks from a concurrent operation
+    // queue when `delegateQueue: nil`. With multiple roles downloading
+    // simultaneously (tagger + chat + embedding tier sweep), didWriteData
+    // can fire in parallel for different tasks. The dictionaries below
+    // would race; protect them with an NSLock to avoid allocator-level
+    // corruption (Swift dictionary CoW is not atomic).
+    private let progressLock = NSLock()
     private var lastUpdateTime: [String: Date] = [:]
     private var lastBytesWritten: [String: Int64] = [:]
 
@@ -346,18 +353,23 @@ private class DownloadDelegate: NSObject, URLSessionDownloadDelegate, @unchecked
         guard let roleStr = downloadTask.taskDescription,
               let role = LLMRole(rawValue: roleStr) else { return }
 
-        // Calculate speed (bytes per second)
+        // Calculate speed (bytes per second). Read-modify-write under
+        // `progressLock` so concurrent delegate callbacks for different
+        // roles don't corrupt the dictionaries.
         let now = Date()
         let key = roleStr
-        let speed: Double
-        if let lastTime = lastUpdateTime[key], let lastBytes = lastBytesWritten[key] {
-            let elapsed = now.timeIntervalSince(lastTime)
-            speed = elapsed > 0 ? Double(totalBytesWritten - lastBytes) / elapsed : 0
-        } else {
-            speed = 0
+        let speed: Double = progressLock.withLock {
+            let result: Double
+            if let lastTime = lastUpdateTime[key], let lastBytes = lastBytesWritten[key] {
+                let elapsed = now.timeIntervalSince(lastTime)
+                result = elapsed > 0 ? Double(totalBytesWritten - lastBytes) / elapsed : 0
+            } else {
+                result = 0
+            }
+            lastUpdateTime[key] = now
+            lastBytesWritten[key] = totalBytesWritten
+            return result
         }
-        lastUpdateTime[key] = now
-        lastBytesWritten[key] = totalBytesWritten
 
         Task { @MainActor in
             downloader?.didUpdateProgress(
