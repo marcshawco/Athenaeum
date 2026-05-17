@@ -316,12 +316,13 @@ final class LocalLLMService: LLMServiceProtocol, @unchecked Sendable {
         // below uses the latest `LlamaInferenceConfig`.
         await purgeStaleContextsIfNeeded()
 
-        // Try LLM-enhanced OCR if vision model is available
+        // Try LLM-enhanced OCR if vision model is available. Funnel
+        // concurrent first-OCR callers through a single in-flight load
+        // task — without this gate, two callers can both observe
+        // `visionContext == nil` and both call `loadModel`, double-
+        // loading the 5 GB MiniCPM-V file and trashing RAM.
         if lock.withLock({ visionContext }) == nil {
-            if let descriptor = LLMModelDescriptor.defaults.first(where: { $0.role == .vision }),
-               isModelAvailable(descriptor) {
-                try? await loadModel(descriptor)
-            }
+            try? await loadVisionContextIfAvailable()
         }
         if let vc = lock.withLock({ visionContext }) {
             // Vision model loaded — use LLM-enhanced OCR (Vision OCR + LLM cleanup)
@@ -330,6 +331,31 @@ final class LocalLLMService: LLMServiceProtocol, @unchecked Sendable {
 
         // No vision model — fall back to native Apple Vision OCR (still excellent)
         return try await nativeOCR.recognizeText(in: imageData)
+    }
+
+    /// Single-flight vision-context loader. Multiple concurrent callers
+    /// share one in-progress `Task` instead of each kicking off their
+    /// own multi-gigabyte mmap.
+    private var visionLoadTask: Task<Void, Error>?
+
+    private func loadVisionContextIfAvailable() async throws {
+        // Read the existing task under lock so two callers race-free
+        // share the in-flight one.
+        let existing: Task<Void, Error>? = lock.withLock { visionLoadTask }
+        if let existing {
+            try await existing.value
+            return
+        }
+        let task = Task<Void, Error> {
+            defer {
+                lock.withLock { _ = visionLoadTask; visionLoadTask = nil }
+            }
+            guard let descriptor = LLMModelDescriptor.defaults.first(where: { $0.role == .vision }),
+                  isModelAvailable(descriptor) else { return }
+            try await loadModel(descriptor)
+        }
+        lock.withLock { visionLoadTask = task }
+        try await task.value
     }
 
     func generateStream(role: LLMRole, messages: [ChatMessage], maxTokens: Int, temperature: Float) -> AsyncThrowingStream<String, Error> {

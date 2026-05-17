@@ -81,7 +81,18 @@ actor VisionOCRService {
         }
     }
 
+    /// Cap on pages we OCR per PDF. Beyond this we bail out so a 5,000-page
+    /// PDF doesn't pin the app rendering page bitmaps for hours.
+    private static let maxPDFPagesForOCR: Int = 200
+
+    /// Cap on per-page bitmap area (pixels) before we scale down. A 5000x5000-pt
+    /// page at 2× = 100 megapixels × 4 bytes/px = 400 MB per page. We clamp the
+    /// effective scale so the per-page allocation stays under ~64 MB.
+    private static let maxPagePixelCount: Int = 16_000_000  // 16 megapixels ≈ 64 MB RGBA
+
     /// OCR all pages of a PDF, returning structured text with page markers.
+    /// Skips pages whose backing bitmap allocation would exceed `maxPagePixelCount`
+    /// after scale clamping. Stops after `maxPDFPagesForOCR` pages.
     func recognizeTextInPDF(data: Data) async throws -> String {
         guard let provider = CGDataProvider(data: data as CFData),
               let pdf = CGPDFDocument(provider) else {
@@ -89,17 +100,32 @@ actor VisionOCRService {
         }
 
         var fullText = ""
-        let pageCount = pdf.numberOfPages
+        let totalPages = pdf.numberOfPages
+        let pageCount = min(totalPages, Self.maxPDFPagesForOCR)
+        if pageCount == 0 { return "" }
 
         for pageIndex in 1...pageCount {
             guard let page = pdf.page(at: pageIndex) else { continue }
 
             let pageRect = page.getBoxRect(.mediaBox)
+            guard pageRect.width > 0, pageRect.height > 0 else { continue }
 
-            // Render at 2x for better OCR accuracy
-            let scale: CGFloat = 2.0
+            // Render at 2× for OCR quality, but clamp the effective scale
+            // so absurdly large pages don't request gigabytes of bitmap.
+            let preferredScale: CGFloat = 2.0
+            let preferredPixels = Double(pageRect.width) * Double(pageRect.height) * Double(preferredScale * preferredScale)
+            let scale: CGFloat
+            if preferredPixels > Double(Self.maxPagePixelCount) {
+                let scaleSquared = Double(Self.maxPagePixelCount) / (Double(pageRect.width) * Double(pageRect.height))
+                guard scaleSquared > 0 else { continue }
+                scale = CGFloat(scaleSquared.squareRoot())
+            } else {
+                scale = preferredScale
+            }
             let width = Int(pageRect.width * scale)
             let height = Int(pageRect.height * scale)
+            guard width > 0, height > 0,
+                  width * height <= Self.maxPagePixelCount else { continue }
 
             let colorSpace = CGColorSpaceCreateDeviceRGB()
             guard let context = CGContext(
@@ -130,6 +156,10 @@ actor VisionOCRService {
                 }
                 fullText += pageText + "\n\n"
             }
+        }
+
+        if totalPages > pageCount {
+            fullText += "\n[OCR stopped at page \(pageCount) of \(totalPages) — re-import a smaller PDF to OCR the remainder]\n"
         }
 
         return fullText.trimmingCharacters(in: .whitespacesAndNewlines)

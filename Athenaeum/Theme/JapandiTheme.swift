@@ -35,10 +35,15 @@ enum Japandi {
         static let surfaceFallback     = Color(light: 0xF4F2EC, dark: 0x231F1B)
         static let surfaceRaisedFB     = Color(light: 0xFFFFFF, dark: 0x2A2521)
         static let accentFallback      = Color(light: 0x3E5C4A, dark: 0xC8D4BE)
-        static let accentMutedFallback = Color(light: 0x8AA89A, dark: 0x8AA89A)
+        // Accessibility-tuned: `accentMutedFallback` at 0x8AA89A on cream
+        // was ~2.4:1 (failed WCAG AA). Darkened the light variant to
+        // 0x4F6D5E for ~4.7:1 against bg.
+        static let accentMutedFallback = Color(light: 0x4F6D5E, dark: 0x8AA89A)
         static let textPrimaryFB       = Color(light: 0x211F1B, dark: 0xEDEFE6)
         static let textSecondaryFB     = Color(light: 0x5A554D, dark: 0xB7C2B0)
-        static let textTertiaryFB      = Color(light: 0x9C968B, dark: 0x8FA395)
+        // Accessibility-tuned: light variant was 0x9C968B (~3.4:1).
+        // 0x6E6960 lifts it above 4.5:1 while keeping the warm earth tone.
+        static let textTertiaryFB      = Color(light: 0x6E6960, dark: 0x8FA395)
         static let borderFallback      = Color(light: 0xE6E1D5, dark: 0x3A332B)
         // inkFallback — deepest ink as *text* color. Flips to near-paper
         // in dark mode so body copy stays legible against a dark background.

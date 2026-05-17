@@ -30,7 +30,7 @@ final class MLXBundleDownloader {
         cfg.timeoutIntervalForRequest = 60
         cfg.timeoutIntervalForResource = 7200
         cfg.httpAdditionalHeaders = [
-            "User-Agent": "ATHENS/1.0 (+local)"
+            "User-Agent": "ATHENS"
         ]
         return URLSession(configuration: cfg)
     }()
@@ -241,6 +241,23 @@ final class MLXBundleDownloader {
                         didFinishDownloadingTo location: URL) {
             // Required by protocol; `session.download(for:delegate:)` returns
             // this location as its tempURL, so nothing to do here.
+        }
+
+        /// Same allowlist as `ModelDownloader`: only follow HTTPS redirects
+        /// to Hugging Face hosts and their LFS CDN. A hijacked 30x can't
+        /// redirect us at an attacker-controlled origin.
+        func urlSession(_ session: URLSession,
+                        task: URLSessionTask,
+                        willPerformHTTPRedirection response: HTTPURLResponse,
+                        newRequest request: URLRequest,
+                        completionHandler: @escaping (URLRequest?) -> Void) {
+            guard let url = request.url,
+                  url.scheme?.lowercased() == "https",
+                  isAllowedRedirectHost(url.host) else {
+                completionHandler(nil)
+                return
+            }
+            completionHandler(request)
         }
     }
 

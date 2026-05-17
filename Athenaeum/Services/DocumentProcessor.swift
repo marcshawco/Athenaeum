@@ -192,6 +192,13 @@ final class DocumentProcessor {
 
     // MARK: - Pipeline
 
+    /// Hard cap on file size we'll import. Auto-scan watches user folders;
+    /// without this, a 5 GB PDF dropped into Downloads would be pulled
+    /// into a Data blob in RAM and persisted into the SwiftData store.
+    /// 250 MB covers every realistic document and stops auto-scan from
+    /// blowing up on accidental videos / disk images.
+    private static let maxImportFileSize: Int64 = 250 * 1024 * 1024
+
     private func processFile(at url: URL) async throws {
         let accessing = url.startAccessingSecurityScopedResource()
         defer { if accessing { url.stopAccessingSecurityScopedResource() } }
@@ -201,6 +208,16 @@ final class DocumentProcessor {
         let resourceValues = try url.resourceValues(forKeys: [.fileSizeKey, .typeIdentifierKey])
         let fileSize = Int64(resourceValues.fileSize ?? 0)
         let uti = resourceValues.typeIdentifier ?? UTType.data.identifier
+
+        // Bail out on oversized files before we read them into memory.
+        if fileSize > Self.maxImportFileSize {
+            throw NSError(
+                domain: "DocumentProcessor",
+                code: 1001,
+                userInfo: [NSLocalizedDescriptionKey: "File is too large to import (\(ByteCountFormatter.string(fromByteCount: fileSize, countStyle: .file)) exceeds 250 MB limit)."]
+            )
+        }
+
         let fileData = try Data(contentsOf: url)
         let initialMetadata = await metadataExtractor.extractInitialMetadata(from: url, data: fileData, uti: uti)
 
