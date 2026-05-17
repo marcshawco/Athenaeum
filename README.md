@@ -4,6 +4,8 @@ ATHENS (formerly Athenaeum) is a private, local-first macOS document library. It
 
 The app is built with SwiftUI, SwiftData, Vision, PDFKit, and a bundled llama.cpp framework for GGUF model inference. It is designed around the idea that sensitive documents should stay on the Mac.
 
+> **2.3.0 — tier-driven runtime + icon-picker polish.** The Hardware Tier picker now adapts both the *model lineup* and the *runtime shape* of every chat: chunk size, retrieval top-K, per-chunk and total prompt char budgets, retrieval over-fetch multiplier, per-document diversity cap, and the inference context window all reshape when the tier changes. The Settings icon picker shows a checkmark badge on the active variant, and the sidebar / settings header / onboarding brand mark all live-follow the user's pick.
+
 > **2.2.0 — rebrand to ATHENS.** All user-facing labels, the Dock display name, app icon, and brand marks now use the new identity. On-disk storage paths (the vault folder, Application Support subfolder, and bundle identifier) are unchanged so existing libraries keep working without migration.
 
 ## What It Does
@@ -76,6 +78,17 @@ This is a documentation app, not a benchmark — ATHENS picks the lightest lineu
 | **Workstation** | ≥ 40 GB | Qwen 2.5 14B Instruct Q4_K_M | Nomic Embed v1.5 | MiniCPM-V 2.6 Q4_K_M | ~14 GB |
 
 The user can override the auto-detected tier in **Settings → AI Models** (Auto-detect / Compact / Standard / Performance / Workstation). Model Status surfaces the active tier with a rationale, the detected RAM, and the model tiles for the chosen lineup.
+
+Each tier also carries a **`HardwareTier.Tunables` block** (chunk size, chunk overlap, RAG top-K, per-chunk char budget, total prompt char budget, retrieval over-fetch multiplier, per-doc diversity cap, n_ctx, GPU layer count). Switching tiers writes the indexing / retrieval / inference values into `UserDefaults`, and `RAGService` reads the prompt-side budgets directly from `HardwareProfiler.activeTunables` on every call. Models already loaded keep their captured `n_ctx` until they're reloaded — the new chunk and retrieval shape kicks in immediately.
+
+| Tier | n_ctx | Chunk / overlap | top-K | per-chunk chars | total prompt chars | over-fetch × | per-doc cap |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| **Compact**     | 4096 | 384 / 48  | 4  | 800  | 4 500  | 5× | 2 |
+| **Standard**    | 4096 | 512 / 64  | 6  | 1 200 | 8 000  | 6× | 3 |
+| **Performance** | 8192 | 640 / 96  | 8  | 1 500 | 12 000 | 6× | 3 |
+| **Workstation** | 8192 | 768 / 128 | 10 | 1 800 | 16 000 | 8× | 4 |
+
+On first launch the active tier's tunables are written once (gated by `didApplyInitialHardwareTunables` in defaults) so a fresh install starts at the right shape without the user opening Settings.
 
 ### Per-role model duties
 

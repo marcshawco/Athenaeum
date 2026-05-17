@@ -9,6 +9,17 @@ struct AthenaeumApp: App {
         // Re-apply the user's chosen app-icon variant on every cold launch
         // so the Dock + Cmd-Tab tile match what they picked in Settings.
         AppIconApplier.applyFromDefaults()
+
+        // On first launch, push tier-aware defaults (chunk size, top-K,
+        // n_ctx, GPU layers, char budgets) into UserDefaults so a brand
+        // new install runs at the right shape for this Mac. Subsequent
+        // launches respect whatever the user has tuned by hand or via
+        // the Settings tier picker.
+        let defaults = UserDefaults.standard
+        if !defaults.bool(forKey: "didApplyInitialHardwareTunables") {
+            HardwareProfiler.applyTunablesForActiveTier()
+            defaults.set(true, forKey: "didApplyInitialHardwareTunables")
+        }
     }
 
     var body: some Scene {
@@ -81,4 +92,10 @@ extension Notification.Name {
     /// userInfo["documentIDs"] = [UUID] — kick off the AI-rename flow for
     /// one or more documents. ContentView shows the review sheet.
     static let aiRenameDocuments = Notification.Name("aiRenameDocuments")
+    /// Posted when the user picks a new app-icon variant in Settings.
+    /// SwiftUI views that show the brand mark observe this to redraw.
+    static let appIconVariantDidChange = Notification.Name("appIconVariantDidChange")
+    /// Posted by `HardwareProfiler` when the resolved/active tier changes.
+    /// Inference and RAG layers re-read their tier-aware defaults.
+    static let hardwareTierDidChange = Notification.Name("hardwareTierDidChange")
 }

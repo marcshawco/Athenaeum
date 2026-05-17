@@ -2,7 +2,12 @@ import SwiftUI
 
 struct OnboardingView: View {
     @AppStorage("hasCompletedOnboarding") private var hasCompleted = false
+    @AppStorage("appIconVariant") private var appIconVariantRaw: String = AppIconVariant.ink.rawValue
     @State private var currentPage = 0
+
+    private var brandMarkAsset: String {
+        (AppIconVariant(rawValue: appIconVariantRaw) ?? .ink).assetName
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -72,7 +77,7 @@ struct OnboardingView: View {
         VStack(spacing: Japandi.Spacing.xl) {
             Spacer()
 
-            Image("BrandMark")
+            Image(brandMarkAsset)
                 .resizable()
                 .interpolation(.high)
                 .frame(width: 96, height: 96)
