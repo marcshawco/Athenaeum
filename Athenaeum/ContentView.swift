@@ -44,7 +44,16 @@ struct ContentView: View {
     /// rendered as a dismissable banner; auto-cleared after a few seconds.
     @State private var saveFailureMessage: String?
 
+    // The body's modifier chain (19 `.onReceive` + 2 `.sheet` + 1
+    // `.onAppear`) blew past Swift's type-checker timeout. Splitting
+    // into stepwise `some View` helpers — each adding a handful of
+    // modifiers and yielding an opaque type — lets the solver chew
+    // through each chunk independently.
     var body: some View {
+        bodyWithSettingsSheet
+    }
+
+    private var bodyRoot: some View {
         Group {
             if !hasCompletedOnboarding {
                 OnboardingView()
@@ -57,90 +66,109 @@ struct ContentView: View {
             // Sync column visibility with persisted panel preference on launch
             columnVisibility = showDetailPanel ? .all : .doubleColumn
         }
-        .onReceive(NotificationCenter.default.publisher(for: .importDocuments)) { _ in
-            openFilePicker()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .scanFolderForImport)) { _ in
-            openFolderForImport()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .rebuildVectorIndex)) { _ in
-            rebuildVectorIndex()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .autoScanFoldersDidChange)) { _ in
-            autoScanCoordinator?.restart()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .selectDocumentByID)) { note in
-            guard let docID = note.userInfo?["documentID"] as? UUID else { return }
-            jumpToDocument(id: docID)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .closeInspector)) { _ in
-            showDetailPanel = false
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .aiRenameDocuments)) { note in
-            guard let ids = note.userInfo?["documentIDs"] as? [UUID] else { return }
-            startAIRename(forDocumentIDs: ids)
-        }
-        .sheet(isPresented: Binding(
-            get: { !aiRenameSuggestions.isEmpty || isGeneratingRenames },
-            set: { if !$0 { aiRenameSuggestions.removeAll(); isGeneratingRenames = false } }
-        )) {
-            AIRenameSheet(
-                suggestions: $aiRenameSuggestions,
-                isLoading: isGeneratingRenames,
-                onApplyAll: applyAIRenames,
-                onCancel: {
-                    aiRenameSuggestions.removeAll()
-                    isGeneratingRenames = false
-                }
-            )
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .openSettings)) { _ in
-            showSettings = true
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .reprocessDocuments)) { note in
-            guard let docID = note.userInfo?["documentID"] as? UUID,
-                  let processor else { return }
-            let fetch = FetchDescriptor<Document>(
-                predicate: #Predicate<Document> { $0.id == docID }
-            )
-            if let doc = try? modelContext.fetch(fetch).first {
-                Task { await processor.reprocessDocuments([doc]) }
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .documentsDeleted)) { note in
-            guard let docIDs = note.userInfo?["documentIDs"] as? [UUID] else { return }
-            removeDeletedDocumentsFromUI(docIDs)
+    }
 
-            guard let ragService else { return }
-            Task {
-                for docID in docIDs {
-                    try? await ragService.removeDocument(id: docID)
+    private var bodyWithImportObservers: some View {
+        bodyRoot
+            .onReceive(NotificationCenter.default.publisher(for: .importDocuments)) { _ in
+                openFilePicker()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .scanFolderForImport)) { _ in
+                openFolderForImport()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .rebuildVectorIndex)) { _ in
+                rebuildVectorIndex()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .autoScanFoldersDidChange)) { _ in
+                autoScanCoordinator?.restart()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .selectDocumentByID)) { note in
+                guard let docID = note.userInfo?["documentID"] as? UUID else { return }
+                jumpToDocument(id: docID)
+            }
+    }
+
+    private var bodyWithRenameSheet: some View {
+        bodyWithImportObservers
+            .onReceive(NotificationCenter.default.publisher(for: .closeInspector)) { _ in
+                showDetailPanel = false
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .aiRenameDocuments)) { note in
+                guard let ids = note.userInfo?["documentIDs"] as? [UUID] else { return }
+                startAIRename(forDocumentIDs: ids)
+            }
+            .sheet(isPresented: Binding(
+                get: { !aiRenameSuggestions.isEmpty || isGeneratingRenames },
+                set: { if !$0 { aiRenameSuggestions.removeAll(); isGeneratingRenames = false } }
+            )) {
+                AIRenameSheet(
+                    suggestions: $aiRenameSuggestions,
+                    isLoading: isGeneratingRenames,
+                    onApplyAll: applyAIRenames,
+                    onCancel: {
+                        aiRenameSuggestions.removeAll()
+                        isGeneratingRenames = false
+                    }
+                )
+            }
+    }
+
+    private var bodyWithDocumentObservers: some View {
+        bodyWithRenameSheet
+            .onReceive(NotificationCenter.default.publisher(for: .openSettings)) { _ in
+                showSettings = true
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .reprocessDocuments)) { note in
+                guard let docID = note.userInfo?["documentID"] as? UUID,
+                      let processor else { return }
+                let fetch = FetchDescriptor<Document>(
+                    predicate: #Predicate<Document> { $0.id == docID }
+                )
+                if let doc = try? modelContext.fetch(fetch).first {
+                    Task { await processor.reprocessDocuments([doc]) }
                 }
             }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .toggleDocumentPreviewPane)) { _ in
-            togglePreviewPane()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .scanDocumentVault)) { _ in
-            scanDocumentVault(showNotification: true, announceNoChanges: true)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: DocumentVaultService.vaultDidChangeNotification)) { _ in
-            restartVaultMonitor()
-            scanDocumentVault(showNotification: true, announceNoChanges: true)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .modelsDidChange)) { _ in
-            modelManager.scanForModels()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .hardwareTierDidChange)) { _ in
-            // Mark every loaded LlamaContext stale so the next inference
-            // request unloads + reloads with the new tier's n_ctx and
-            // GPU-layer count. Active streams finish on the old context
-            // first (the actor's serial executor guarantees ordering).
-            llmService?.markAllContextsStale()
-        }
-        .sheet(isPresented: $showSettings) {
-            SettingsView(modelManager: modelManager, autoScanRegistry: autoScanRegistry)
-        }
+            .onReceive(NotificationCenter.default.publisher(for: .documentsDeleted)) { note in
+                guard let docIDs = note.userInfo?["documentIDs"] as? [UUID] else { return }
+                removeDeletedDocumentsFromUI(docIDs)
+                guard let ragService else { return }
+                Task {
+                    for docID in docIDs {
+                        try? await ragService.removeDocument(id: docID)
+                    }
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .toggleDocumentPreviewPane)) { _ in
+                togglePreviewPane()
+            }
+    }
+
+    private var bodyWithVaultObservers: some View {
+        bodyWithDocumentObservers
+            .onReceive(NotificationCenter.default.publisher(for: .scanDocumentVault)) { _ in
+                scanDocumentVault(showNotification: true, announceNoChanges: true)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: DocumentVaultService.vaultDidChangeNotification)) { _ in
+                restartVaultMonitor()
+                scanDocumentVault(showNotification: true, announceNoChanges: true)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .modelsDidChange)) { _ in
+                modelManager.scanForModels()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .hardwareTierDidChange)) { _ in
+                // Mark every loaded LlamaContext stale so the next inference
+                // request unloads + reloads with the new tier's n_ctx and
+                // GPU-layer count. Active streams finish on the old context
+                // first (the actor's serial executor guarantees ordering).
+                llmService?.markAllContextsStale()
+            }
+    }
+
+    private var bodyWithSettingsSheet: some View {
+        bodyWithVaultObservers
+            .sheet(isPresented: $showSettings) {
+                SettingsView(modelManager: modelManager, autoScanRegistry: autoScanRegistry)
+            }
     }
 
     // MARK: - Main Content

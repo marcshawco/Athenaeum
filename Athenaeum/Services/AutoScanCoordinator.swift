@@ -51,9 +51,14 @@ final class AutoScanCoordinator {
     /// nested classes would otherwise inherit the enclosing type's
     /// isolation.
     fileprivate final class StreamHolder: @unchecked Sendable {
+        // The project default `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`
+        // pushes `@MainActor` onto nested types and their stored
+        // properties. The methods can opt out with `nonisolated`, but
+        // stored properties need `nonisolated(unsafe)` — the NSLock
+        // below is the actual synchronization guarantee.
+        nonisolated(unsafe) private var stream: FSEventStreamRef?
+        nonisolated(unsafe) private var securityScopedURLs: [URL] = []
         private let lock = NSLock()
-        private var stream: FSEventStreamRef?
-        private var securityScopedURLs: [URL] = []
 
         nonisolated init() {}
 
