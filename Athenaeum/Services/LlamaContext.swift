@@ -95,11 +95,17 @@ struct LlamaInferenceConfig: Sendable {
 // devices unnecessarily. Gate it behind an atomic flag so it runs at
 // most once per process lifetime.
 
-#if canImport(llama)
-private let llamaBackendLock = NSLock()
-private nonisolated(unsafe) var llamaBackendDidInit = false
+// The project sets `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, which
+// makes free functions and module-level lets default to MainActor
+// isolation. This init helper is called from `LlamaContext.load()`
+// — a custom-actor context — so everything here must be explicitly
+// `nonisolated` to avoid an actor-hop warning.
 
-func llamaBackendInitIfNeeded() {
+#if canImport(llama)
+nonisolated private let llamaBackendLock = NSLock()
+nonisolated(unsafe) private var llamaBackendDidInit = false
+
+nonisolated func llamaBackendInitIfNeeded() {
     llamaBackendLock.lock()
     defer { llamaBackendLock.unlock() }
     guard !llamaBackendDidInit else { return }
@@ -107,7 +113,7 @@ func llamaBackendInitIfNeeded() {
     llamaBackendDidInit = true
 }
 #else
-func llamaBackendInitIfNeeded() {}
+nonisolated func llamaBackendInitIfNeeded() {}
 #endif
 
 // MARK: - Llama Context

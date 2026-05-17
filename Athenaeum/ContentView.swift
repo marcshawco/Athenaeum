@@ -482,85 +482,122 @@ struct ContentView: View {
     @ViewBuilder
     private var notificationBanner: some View {
         if showImportNotification {
-            HStack(spacing: Japandi.Spacing.xs) {
-                Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(Japandi.Colors.accentFallback)
-                    .accessibilityHidden(true)
-                Text(importNotificationText)
-                    .font(Japandi.Typography.body)
-                    .foregroundStyle(Japandi.Colors.textPrimaryFB)
-            }
-            .padding(.horizontal, Japandi.Spacing.md)
-            .padding(.vertical, Japandi.Spacing.sm)
-            .background(
-                // Respect Reduce Transparency: blur material is dropped
-                // for a solid surface fill so the banner doesn't flicker
-                // for users who have transparency off.
-                Group {
-                    if Japandi.Transparency.shouldReduce {
-                        Japandi.Colors.surfaceRaisedFB
-                    } else {
-                        Color.clear.background(.ultraThinMaterial)
-                    }
-                }
-            )
-            .clipShape(Capsule())
-            .japandiShadow(Japandi.Shadow.card)
-            .padding(.bottom, Japandi.Spacing.lg)
-            .transition(
-                Japandi.Transparency.shouldReduce
-                    ? .opacity
-                    : .move(edge: .bottom).combined(with: .opacity)
-            )
+            notificationBannerBody
         }
+    }
+
+    /// Extracted from the `if`-guarded `@ViewBuilder` above because the
+    /// inline expression — Group-with-if/else inside `.background` plus
+    /// a ternary inside `.transition` plus 4 chained padding/clip/shadow
+    /// modifiers — tripped Swift's type-checker timeout.
+    private var notificationBannerBody: some View {
+        HStack(spacing: Japandi.Spacing.xs) {
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(Japandi.Colors.accentFallback)
+                .accessibilityHidden(true)
+            Text(importNotificationText)
+                .font(Japandi.Typography.body)
+                .foregroundStyle(Japandi.Colors.textPrimaryFB)
+        }
+        .padding(.horizontal, Japandi.Spacing.md)
+        .padding(.vertical, Japandi.Spacing.sm)
+        .background(notificationBannerBackground)
+        .clipShape(Capsule())
+        .japandiShadow(Japandi.Shadow.card)
+        .padding(.bottom, Japandi.Spacing.lg)
+        .transition(notificationBannerTransition)
+    }
+
+    /// Respect Reduce Transparency: drop the blur material for a solid
+    /// surface fill so the banner doesn't flicker when transparency is
+    /// off.
+    @ViewBuilder
+    private var notificationBannerBackground: some View {
+        if Japandi.Transparency.shouldReduce {
+            Japandi.Colors.surfaceRaisedFB
+        } else {
+            Color.clear.background(.ultraThinMaterial)
+        }
+    }
+
+    private var notificationBannerTransition: AnyTransition {
+        if Japandi.Transparency.shouldReduce {
+            return .opacity
+        }
+        return .move(edge: .bottom).combined(with: .opacity)
     }
 
     /// Top-edge banner shown when a SwiftData save fails. Tappable
     /// dismiss; also auto-clears 6 s after appearing.
+    ///
+    /// Split into helpers because a single inline expression with the
+    /// full modifier chain (background + overlay + shadow + padding +
+    /// frame + ternary transition + a11y) tripped Swift's type-checker
+    /// timeout in ContentView. Each helper returns a small `some View`
+    /// the checker can handle in isolation.
     @ViewBuilder
     private var saveFailureBanner: some View {
         if let message = saveFailureMessage {
-            HStack(spacing: Japandi.Spacing.xs) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(Japandi.Colors.destructiveFallback)
-                    .accessibilityHidden(true)
-                Text(message)
-                    .font(Japandi.Typography.body)
-                    .foregroundStyle(Japandi.Colors.textPrimaryFB)
-                Spacer(minLength: Japandi.Spacing.sm)
-                Button {
-                    withAnimation(Japandi.Motion.gentle) { saveFailureMessage = nil }
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Japandi.Colors.textTertiaryFB)
-                        .accessibilityHidden(true)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Dismiss")
-            }
+            saveFailureBannerBody(message: message)
+        }
+    }
+
+    private func saveFailureBannerBody(message: String) -> some View {
+        saveFailureBannerRow(message: message)
             .padding(.horizontal, Japandi.Spacing.md)
             .padding(.vertical, Japandi.Spacing.sm)
-            .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Japandi.Colors.surfaceRaisedFB)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(Japandi.Colors.destructiveFallback.opacity(0.4), lineWidth: 0.5)
-            )
+            .background(saveFailureBannerBackground)
+            .overlay(saveFailureBannerBorder)
             .japandiShadow(Japandi.Shadow.card)
             .padding(.top, Japandi.Spacing.md)
             .padding(.horizontal, Japandi.Spacing.md)
             .frame(maxWidth: 480)
-            .transition(
-                Japandi.Transparency.shouldReduce
-                    ? .opacity
-                    : .move(edge: .top).combined(with: .opacity)
-            )
+            .transition(saveFailureBannerTransition)
             .accessibilityElement(children: .combine)
             .accessibilityAddTraits(.isStaticText)
+    }
+
+    private func saveFailureBannerRow(message: String) -> some View {
+        HStack(spacing: Japandi.Spacing.xs) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(Japandi.Colors.destructiveFallback)
+                .accessibilityHidden(true)
+            Text(message)
+                .font(Japandi.Typography.body)
+                .foregroundStyle(Japandi.Colors.textPrimaryFB)
+            Spacer(minLength: Japandi.Spacing.sm)
+            saveFailureBannerDismissButton
         }
+    }
+
+    private var saveFailureBannerDismissButton: some View {
+        Button {
+            withAnimation(Japandi.Motion.gentle) { saveFailureMessage = nil }
+        } label: {
+            Image(systemName: "xmark")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(Japandi.Colors.textTertiaryFB)
+                .accessibilityHidden(true)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Dismiss")
+    }
+
+    private var saveFailureBannerBackground: some View {
+        RoundedRectangle(cornerRadius: 12, style: .continuous)
+            .fill(Japandi.Colors.surfaceRaisedFB)
+    }
+
+    private var saveFailureBannerBorder: some View {
+        RoundedRectangle(cornerRadius: 12, style: .continuous)
+            .strokeBorder(Japandi.Colors.destructiveFallback.opacity(0.4), lineWidth: 0.5)
+    }
+
+    private var saveFailureBannerTransition: AnyTransition {
+        if Japandi.Transparency.shouldReduce {
+            return .opacity
+        }
+        return .move(edge: .top).combined(with: .opacity)
     }
 
     /// Read the failure from the notification, format a short message,

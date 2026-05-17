@@ -43,23 +43,32 @@ final class AutoScanCoordinator {
     /// Nonisolated holder for the C-pointer FSEvents stream and the
     /// security-scoped URLs we need to release together. Owns its own
     /// `NSLock` so `release()` can run from a nonisolated `deinit`.
+    ///
+    /// The class itself and every method are `nonisolated` so the
+    /// MainActor-isolated `AutoScanCoordinator` (and its nonisolated
+    /// deinit) can both invoke them without a cross-actor hop. With
+    /// the project default `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`,
+    /// nested classes would otherwise inherit the enclosing type's
+    /// isolation.
     fileprivate final class StreamHolder: @unchecked Sendable {
         private let lock = NSLock()
         private var stream: FSEventStreamRef?
         private var securityScopedURLs: [URL] = []
 
-        func set(stream: FSEventStreamRef?, securityScopedURLs: [URL]) {
+        nonisolated init() {}
+
+        nonisolated func set(stream: FSEventStreamRef?, securityScopedURLs: [URL]) {
             lock.withLock {
                 self.stream = stream
                 self.securityScopedURLs = securityScopedURLs
             }
         }
 
-        var hasStream: Bool {
+        nonisolated var hasStream: Bool {
             lock.withLock { stream != nil }
         }
 
-        func release() {
+        nonisolated func release() {
             lock.withLock {
                 if let s = stream {
                     FSEventStreamStop(s)
