@@ -13,6 +13,14 @@ struct SettingsView: View {
     @AppStorage("inferenceEngine") private var inferenceEngineRaw: String = InferenceEngine.llamaCpp.rawValue
     @AppStorage("autoTagEnabled") private var autoTagEnabled: Bool = true
     @AppStorage(HardwareProfiler.overrideKey) private var hardwareTierOverride: String = "auto"
+    /// Persist chat conversations across app sessions. When off, the chat
+    /// surface treats each visit as a fresh in-memory session and nothing
+    /// is written to SwiftData.
+    @AppStorage("persistChatsAcrossSessions") private var persistChatsAcrossSessions: Bool = true
+    /// Low-power tagging mode. Halves the thread count used by the local
+    /// LLM during auto-tag so the user's machine stays cool/quiet at the
+    /// cost of slower tagging. See `LlamaInferenceConfig`.
+    @AppStorage("lowPowerTagging") private var lowPowerTagging: Bool = false
     @State private var vaultPath = DocumentVaultService.shared.vaultURL.path
     @State private var selection: SettingsTab = .general
     /// First time Settings opens we land on Help & Tour instead of General, so
@@ -233,6 +241,36 @@ struct SettingsView: View {
                             .font(Japandi.Typography.body)
                             .foregroundStyle(Japandi.Colors.textPrimaryFB)
                         Text("Uses the local tagger model to read each new document and assign tags + a 500-type document classification. Turn off to import without AI tagging — you can always run \u{201C}Auto Tag\u{201D} later.")
+                            .font(Japandi.Typography.caption)
+                            .foregroundStyle(Japandi.Colors.textTertiaryFB)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .toggleStyle(.switch)
+                .tint(Japandi.Colors.accentFallback)
+
+                Toggle(isOn: $lowPowerTagging) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Low power mode for tagging")
+                            .font(Japandi.Typography.body)
+                            .foregroundStyle(Japandi.Colors.textPrimaryFB)
+                        Text("Halves the CPU threads used during auto-tag so the fans stay quiet and the lid stays cool. Tagging takes ~2× longer per document. Good for laptop work; turn off for fastest tagging on a plugged-in machine.")
+                            .font(Japandi.Typography.caption)
+                            .foregroundStyle(Japandi.Colors.textTertiaryFB)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .toggleStyle(.switch)
+                .tint(Japandi.Colors.accentFallback)
+            }
+
+            Section("Chat") {
+                Toggle(isOn: $persistChatsAcrossSessions) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Persist chat history across sessions")
+                            .font(Japandi.Typography.body)
+                            .foregroundStyle(Japandi.Colors.textPrimaryFB)
+                        Text("When on, leaving the chat surface and coming back picks up where you left off — and every chat is saved to history. Turn off if you'd rather treat each visit as a fresh in-memory session that vanishes when you navigate away.")
                             .font(Japandi.Typography.caption)
                             .foregroundStyle(Japandi.Colors.textTertiaryFB)
                             .fixedSize(horizontal: false, vertical: true)

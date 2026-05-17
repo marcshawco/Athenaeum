@@ -40,6 +40,12 @@ struct ChatView: View {
     /// so the same conversation re-opens instead of resetting to empty.
     @AppStorage("currentChatID") private var storedChatIDRaw: String = ""
 
+    /// User-facing toggle in Settings → General → Chat. When false, the
+    /// chat surface treats each visit as a fresh in-memory session — no
+    /// SwiftData writes, no restore on appear. Default true (matches the
+    /// expected "your stuff persists" behavior).
+    @AppStorage("persistChatsAcrossSessions") private var persistChatsAcrossSessions: Bool = true
+
     var body: some View {
         VStack(spacing: 0) {
             // Header
@@ -163,10 +169,31 @@ struct ChatView: View {
             // Restore the most recent conversation the first time the view
             // appears in this lifetime. Citation clicks → library → return
             // here will re-enter this branch and reload the chat the user
-            // left, rather than presenting an empty screen.
+            // left, rather than presenting an empty screen. Skipped when
+            // the user has opted out of cross-session persistence in
+            // Settings.
             guard !hasRestoredOnAppear else { return }
             hasRestoredOnAppear = true
-            restoreLastConversation()
+            if persistChatsAcrossSessions {
+                restoreLastConversation()
+            }
+        }
+        .onDisappear {
+            // Belt-and-braces save on tab-switch / app-quit. Most save
+            // calls already happen at message-completion boundaries, but
+            // this catches the edge case where the user types and then
+            // navigates away mid-stream or before a per-turn save fires.
+            if persistChatsAcrossSessions, !messages.isEmpty {
+                saveCurrentConversation()
+            }
+        }
+        .onChange(of: messages.count) { _, _ in
+            // Auto-save after every message turn (user send or assistant
+            // completion). Cheaper than waiting for the user to click
+            // away, and it means the history list stays current.
+            if persistChatsAcrossSessions, !messages.isEmpty {
+                saveCurrentConversation()
+            }
         }
         .confirmationDialog(
             "Clear this chat?",

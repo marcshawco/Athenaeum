@@ -286,18 +286,38 @@ final class RAGService {
     }
 
     private func retrievalQuery(for question: String, history: [ChatMessage]) -> String {
-        let recentUserTurns = history
-            .filter { $0.role == .user }
-            .suffix(3)
-            .map(\.content)
+        // Topic-switch resilience: bias the embedding heavily toward the
+        // CURRENT question and only fold in a tiny amount of immediate
+        // context for genuine follow-ups ("what about her birthday?").
+        //
+        // The previous query stitched together the last 3 user turns plus
+        // the last assistant turn — that worked for follow-ups but
+        // catastrophically polluted topic switches (ask about a protein
+        // ice cream recipe after talking about a fashion brand, the
+        // embedding lands on fashion docs and the recipe is never
+        // retrieved). The shortest follow-up question is something like
+        // "what about her birthday?" which is ~4 tokens — folding in the
+        // previous user turn is enough to anchor "her" without
+        // overpowering the embedding.
 
-        let recentAssistantTurns = history
-            .filter { $0.role == .assistant }
-            .suffix(1)
-            .map { String($0.content.prefix(700)) }
+        let trimmedQuestion = question.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        return (recentUserTurns + recentAssistantTurns + [question])
-            .joined(separator: "\n")
+        // If the current question already names the subject (longer than a
+        // bare pronoun-style follow-up), retrieve on the question alone.
+        // Anything > 5 words is treated as self-contained.
+        let wordCount = trimmedQuestion.split(whereSeparator: { $0.isWhitespace }).count
+        if wordCount >= 5 || history.isEmpty {
+            return trimmedQuestion
+        }
+
+        // Short follow-up. Pull in the single most recent user turn for
+        // pronoun resolution, but nothing further back — a longer history
+        // window starts dragging the embedding off-topic.
+        if let lastUserTurn = history.last(where: { $0.role == .user })?.content,
+           !lastUserTurn.isEmpty {
+            return "\(lastUserTurn)\n\(trimmedQuestion)"
+        }
+        return trimmedQuestion
     }
 
     private func retrieveRelevantChunks(

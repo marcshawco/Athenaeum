@@ -28,16 +28,21 @@ struct LlamaInferenceConfig: Sendable {
 
     // Static computed properties are nonisolated in Swift 6 — no global actor isolation issue.
     static var tagging: LlamaInferenceConfig {
-        // Tagging needs a much larger context than chat: the prompt carries
-        // the full 500-type taxonomy, the 1,100+-term tag pool, three few-shot
-        // examples, and 8 KB of document body — easily 10K tokens before the
-        // output budget. Bumped from 8K to 16K when the pool grew past 1,000
-        // slugs. Qwen 2.5 14B supports 32K natively, so 16K is well within
-        // bounds. KV-cache RAM at 16K is roughly 2-4 GB on a 14B Q4 — fine
-        // on any modern Apple Silicon machine that can already load the
-        // weights themselves.
-        var config = tuned(LlamaInferenceConfig(maxTokens: 768, temperature: 0.1, topP: 0.95, topK: 20, repeatPenalty: 1.0))
-        config.contextSize = max(config.contextSize, 16384)
+        // Tagging prompt budget (v2.5+ slim pool):
+        //   500-type taxonomy:  ~5 KB
+        //   ~130-anchor pool:   ~2 KB  (was ~15 KB with the old 1100-slug list)
+        //   3 few-shot examples + system prompt: ~3 KB
+        //   document body:      8 KB
+        //   ≈ 18 KB ≈ 4.5 K tokens, comfortably inside an 8 K context.
+        //
+        // Dropping `contextSize` from 16 K → 8 K and `maxTokens` from 768
+        // → 384 (tagger output JSON is ~200-400 tokens in practice) cuts
+        // KV-cache RAM in half and roughly halves generation time. That
+        // matters because a hotter prompt + bigger generate budget means
+        // more GPU/Metal work per document → more heat + fan time.
+        var config = tuned(LlamaInferenceConfig(maxTokens: 384, temperature: 0.1, topP: 0.95, topK: 20, repeatPenalty: 1.0))
+        config.contextSize = max(config.contextSize, 8192)
+        config.nThreads = configuredTaggerThreadCount
         return config
     }
 
@@ -85,6 +90,21 @@ struct LlamaInferenceConfig: Sendable {
     private static var configuredThreadCount: Int32 {
         let value = UserDefaults.standard.integer(forKey: "llamaThreadCount")
         return value > 0 ? Int32(value) : 0
+    }
+
+    /// Tagger-specific thread count. When the user enables "Low power
+    /// mode for tagging" in Settings → General we halve the CPU thread
+    /// budget (clamped to at least 2). The trade-off: tagging takes
+    /// ~2× longer per document but the fans stay quiet and the laptop
+    /// stays cool. Auto-tag is a background activity for most users —
+    /// throughput rarely matters as much as the machine staying
+    /// usable for everything else.
+    private static var configuredTaggerThreadCount: Int32 {
+        let lowPower = UserDefaults.standard.bool(forKey: "lowPowerTagging")
+        if !lowPower { return configuredThreadCount }
+        let physicalCores = max(1, ProcessInfo.processInfo.processorCount)
+        let halved = max(2, physicalCores / 2)
+        return Int32(halved)
     }
 }
 
