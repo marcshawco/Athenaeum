@@ -9,10 +9,12 @@ The app is built with SwiftUI, SwiftData, Vision, PDFKit, and a bundled llama.cp
 - Imports PDFs, images, text files, Word documents, spreadsheets, presentations, emails, calendar files, and other common document formats.
 - Stores originals in a local document vault, defaulting to `~/Documents/Athenaeum Library`.
 - Extracts text from PDFs and common text formats, with Apple Vision OCR for images and scanned documents.
-- Classifies documents with a built-in controlled tag vocabulary and optional local LLM tagging.
+- Classifies documents with a 1,100+-term controlled tag vocabulary and local LLM tagging.
 - Tracks titles, filenames, file types, sizes, correspondents, dates, summaries, tags, processing state, and searchable text in SwiftData.
 - Builds a local vector index for document chunks and supports document chat through RAG.
-- Downloads and manages local GGUF models from Hugging Face.
+- **Auto-tiers the model lineup to the host Mac** — 8 GB MacBook Airs run a Compact set (Qwen 3B); 16 GB Macs get Standard (Qwen 7B + MiniCPM-V); 24+ GB machines unlock Performance (Qwen 14B + MiniCPM-V). User-overridable in Settings.
+- Sidebar tags are user-pinned (cap 10); a dedicated **All Tags** screen browses the full vocabulary with A–Z grouping, search, and right-click pin/unpin.
+- Bulk batch actions for selected documents: tag, auto-tag, clear tags, auto-name, export, delete.
 - Exports originals, extracted text, JSON metadata, or CSV catalog rows.
 
 ## Project Structure
@@ -46,7 +48,8 @@ Athenaeum starts in `AthenaeumApp`, which creates the SwiftData model container 
 - `LocalLLMService` uses `LlamaContext` actors to load and run local models. Two roles that point at the same file share a single in-RAM context.
 - `VectorStore` persists embeddings for local semantic search. It detects embedding-dimension mismatches on load so the library can be re-embedded when the embedder changes.
 - `RAGService` chunks documents, generates retrieval-tuned embeddings with the dedicated embedding model, retrieves relevant context, and streams chat answers with citations.
-- `ModelDownloader` downloads the configured GGUF models into Application Support.
+- `ModelDownloader` downloads the configured GGUF models into Application Support. Both this and `LLMModelDescriptor.defaults` are tier-aware — see *Local Models → Hardware tiers* below.
+- `HardwareProfiler` reads available unified memory and resolves a `HardwareTier` (Compact / Standard / Performance / Workstation). The user can override the auto-detected tier from Settings; everything downstream picks up the change via `NotificationCenter.modelsDidChange`.
 
 The UI is organized around a three-pane macOS layout: sidebar navigation, a library or chat content area, and an inspector-style detail/preview pane.
 
@@ -58,17 +61,40 @@ Athenaeum looks for GGUF models in:
 ~/Library/Application Support/Athenaeum/Models
 ```
 
-The catalog is "best in class for the job" — no optional tiers, no second-string fallbacks. Three files cover four jobs:
+### Hardware tiers
 
-| File | Roles | Purpose |
-| --- | --- | --- |
-| `Qwen2.5-14B-Instruct-Q4_K_M.gguf` (~9 GB) | Tagger + Chat | Strict-JSON document classification (300-term controlled vocabulary, 500-type taxonomy) and RAG document chat. One file, two roles, one in-RAM context — `LocalLLMService.contextForRole` dedupes by filename. |
-| `nomic-embed-text-v1.5.Q4_K_M.gguf` (~84 MB) | Embedding | Purpose-built retrieval embeddings (768-dim, contrastively trained). RAGService injects the model's required `search_document:` / `search_query:` task prefixes. |
-| `ggml-model-Q4_K_M.gguf` (~5 GB) | Vision | MiniCPM-V 2.6 — enhanced OCR for scanned PDFs and photographed receipts when Apple Vision alone isn't enough. |
+This is a documentation app, not a benchmark — Athenaeum picks the lightest lineup that does the job well on the host Mac. `HardwareProfiler` reads `ProcessInfo.processInfo.physicalMemory` at launch and chooses a tier:
 
-Models can be downloaded from the app's Model Status screen. Document import still works without models installed; Athenaeum falls back to native text extraction, Apple Vision OCR, and a rule-based offline classifier where possible.
+| Tier | RAM | Tagger + Chat | Embedding | Vision | On-disk |
+| --- | --- | --- | --- | --- | --- |
+| **Compact** | < 12 GB | Qwen 2.5 3B Instruct Q4_K_M | Nomic Embed v1.5 | — (Apple Vision OCR) | ~2 GB |
+| **Standard** | 12–20 GB | Qwen 2.5 7B Instruct Q4_K_M | Nomic Embed v1.5 | MiniCPM-V 2.6 Q4_K_M | ~10 GB |
+| **Performance** | 20–40 GB | Qwen 2.5 14B Instruct Q4_K_M | Nomic Embed v1.5 | MiniCPM-V 2.6 Q4_K_M | ~14 GB |
+| **Workstation** | ≥ 40 GB | Qwen 2.5 14B Instruct Q4_K_M | Nomic Embed v1.5 | MiniCPM-V 2.6 Q4_K_M | ~14 GB |
 
-When the active embedder's output dimension stops matching what's persisted in the vector store, the store wipes itself on next launch and `indexExistingDocumentsIfNeeded` re-embeds the library in the background. This is the upgrade path used when the embedding model changes.
+The user can override the auto-detected tier in **Settings → AI Models** (Auto-detect / Compact / Standard / Performance / Workstation). Model Status surfaces the active tier with a rationale, the detected RAM, and the model tiles for the chosen lineup.
+
+### Per-role model duties
+
+- **Tagger + Chat** share a single GGUF file. `LocalLLMService.contextForRole` notices the shared filename and reuses one in-RAM `LlamaContext` instead of loading the weights twice.
+- **Embedding** uses Nomic Embed Text v1.5 (768-dim, contrastively trained). `RAGService` prepends the model's required `search_document:` / `search_query:` task prefixes.
+- **Vision** uses MiniCPM-V 2.6 for enhanced OCR on scanned PDFs and photographed receipts when Apple's native Vision framework alone isn't enough. Skipped entirely on Compact tier.
+
+### Fallbacks and migrations
+
+Document import still works without models installed; Athenaeum falls back to native text extraction, Apple Vision OCR, and a rule-based offline classifier where possible.
+
+When the active embedder's output dimension stops matching what's persisted in the vector store, the store wipes itself on next launch and `indexExistingDocumentsIfNeeded` re-embeds the library in the background. The same flow handles tier changes that swap the embedder.
+
+### Diagnostics
+
+Every tagging attempt is mirrored to a permanent log at:
+
+```text
+~/Library/Containers/<bundle-id>/Data/Library/Application Support/Athenaeum/tagger.log
+```
+
+(or the equivalent unsandboxed path if you're running outside the sandbox). Lines include the prompt length, the raw model response, the parsed tags, the post-validation tags, and explicit `UNPARSEABLE JSON` / `THREW` markers when the LLM stumbles.
 
 ## Requirements
 
