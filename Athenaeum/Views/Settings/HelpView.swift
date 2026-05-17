@@ -331,6 +331,7 @@ struct HelpView: View {
                 .font(.system(size: 18, weight: .ultraLight))
                 .foregroundStyle(Japandi.Colors.accentFallback)
                 .frame(width: 30)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
                     .font(.system(size: 14, weight: .medium, design: .serif))
@@ -361,6 +362,7 @@ struct HelpView: View {
                 Image(systemName: icon)
                     .font(.system(size: 12, weight: .light))
                     .foregroundStyle(Japandi.Colors.accentFallback)
+                    .accessibilityHidden(true)
                 Text(title)
                     .font(.system(size: 13, weight: .medium, design: .serif))
                     .foregroundStyle(Japandi.Colors.textPrimaryFB)

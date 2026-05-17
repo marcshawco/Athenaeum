@@ -369,7 +369,7 @@ struct SidebarView: View {
         ) { folder in
             Button("Delete", role: .destructive) {
                 modelContext.delete(folder)
-                try? modelContext.save()
+                modelContext.persist(context: "sidebar-folder-delete")
                 folderDeleteTarget = nil
             }
             Button("Cancel", role: .cancel) { folderDeleteTarget = nil }

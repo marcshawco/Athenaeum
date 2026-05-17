@@ -39,6 +39,11 @@ struct ContentView: View {
     @State private var aiRenameSuggestions: [AIRenameSuggestion] = []
     @State private var isGeneratingRenames = false
 
+    /// Latest SwiftData save failure surfaced from `.modelContextSaveFailed`.
+    /// `nil` means no failure to show. Set by the notification observer;
+    /// rendered as a dismissable banner; auto-cleared after a few seconds.
+    @State private var saveFailureMessage: String?
+
     var body: some View {
         Group {
             if !hasCompletedOnboarding {
@@ -190,6 +195,12 @@ struct ContentView: View {
         .overlay(alignment: .top) {
             reindexBanner
         }
+        .overlay(alignment: .top) {
+            saveFailureBanner
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .modelContextSaveFailed)) { note in
+            handleSaveFailure(note: note)
+        }
         .spacePreviewShortcut()
         .task {
             await refreshReindexCandidates()
@@ -209,6 +220,7 @@ struct ContentView: View {
                 Image(systemName: "sparkle.magnifyingglass")
                     .font(.system(size: 11))
                     .foregroundStyle(Japandi.Colors.accentFallback)
+                    .accessibilityHidden(true)
                 Text("\(reindexCandidates) document\(reindexCandidates == 1 ? "" : "s") not yet indexed for search.")
                     .font(Japandi.Typography.caption)
                     .foregroundStyle(Japandi.Colors.textSecondaryFB)
@@ -473,17 +485,98 @@ struct ContentView: View {
             HStack(spacing: Japandi.Spacing.xs) {
                 Image(systemName: "checkmark.circle.fill")
                     .foregroundStyle(Japandi.Colors.accentFallback)
+                    .accessibilityHidden(true)
                 Text(importNotificationText)
                     .font(Japandi.Typography.body)
                     .foregroundStyle(Japandi.Colors.textPrimaryFB)
             }
             .padding(.horizontal, Japandi.Spacing.md)
             .padding(.vertical, Japandi.Spacing.sm)
-            .background(.ultraThinMaterial)
+            .background(
+                // Respect Reduce Transparency: blur material is dropped
+                // for a solid surface fill so the banner doesn't flicker
+                // for users who have transparency off.
+                Group {
+                    if Japandi.Transparency.shouldReduce {
+                        Japandi.Colors.surfaceRaisedFB
+                    } else {
+                        Color.clear.background(.ultraThinMaterial)
+                    }
+                }
+            )
             .clipShape(Capsule())
             .japandiShadow(Japandi.Shadow.card)
             .padding(.bottom, Japandi.Spacing.lg)
-            .transition(.move(edge: .bottom).combined(with: .opacity))
+            .transition(
+                Japandi.Transparency.shouldReduce
+                    ? .opacity
+                    : .move(edge: .bottom).combined(with: .opacity)
+            )
+        }
+    }
+
+    /// Top-edge banner shown when a SwiftData save fails. Tappable
+    /// dismiss; also auto-clears 6 s after appearing.
+    @ViewBuilder
+    private var saveFailureBanner: some View {
+        if let message = saveFailureMessage {
+            HStack(spacing: Japandi.Spacing.xs) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(Japandi.Colors.destructiveFallback)
+                    .accessibilityHidden(true)
+                Text(message)
+                    .font(Japandi.Typography.body)
+                    .foregroundStyle(Japandi.Colors.textPrimaryFB)
+                Spacer(minLength: Japandi.Spacing.sm)
+                Button {
+                    withAnimation(Japandi.Motion.gentle) { saveFailureMessage = nil }
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Japandi.Colors.textTertiaryFB)
+                        .accessibilityHidden(true)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Dismiss")
+            }
+            .padding(.horizontal, Japandi.Spacing.md)
+            .padding(.vertical, Japandi.Spacing.sm)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Japandi.Colors.surfaceRaisedFB)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(Japandi.Colors.destructiveFallback.opacity(0.4), lineWidth: 0.5)
+            )
+            .japandiShadow(Japandi.Shadow.card)
+            .padding(.top, Japandi.Spacing.md)
+            .padding(.horizontal, Japandi.Spacing.md)
+            .frame(maxWidth: 480)
+            .transition(
+                Japandi.Transparency.shouldReduce
+                    ? .opacity
+                    : .move(edge: .top).combined(with: .opacity)
+            )
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.isStaticText)
+        }
+    }
+
+    /// Read the failure from the notification, format a short message,
+    /// and schedule auto-dismiss.
+    private func handleSaveFailure(note: Notification) {
+        guard let error = note.userInfo?["error"] as? Error else { return }
+        let tag = note.userInfo?["context"] as? String
+        let shortError = (error as NSError).localizedDescription
+        let prefix = tag.map { "Couldn't save (\($0))" } ?? "Couldn't save"
+        let message = "\(prefix): \(shortError)"
+        withAnimation(Japandi.Motion.gentle) { saveFailureMessage = message }
+        Task {
+            try? await Task.sleep(nanoseconds: 6_000_000_000)
+            await MainActor.run {
+                withAnimation(Japandi.Motion.gentle) { saveFailureMessage = nil }
+            }
         }
     }
 
@@ -494,6 +587,7 @@ struct ContentView: View {
             Image(systemName: icon)
                 .font(.system(size: 40, weight: .ultraLight))
                 .foregroundStyle(Japandi.Colors.textTertiaryFB)
+                .accessibilityHidden(true)
             Text(text)
                 .font(Japandi.Typography.body)
                 .foregroundStyle(Japandi.Colors.textTertiaryFB)
@@ -619,7 +713,7 @@ struct ContentView: View {
         }
 
         if repairedCount > 0 || docs.contains(where: { $0.processingError != nil }) {
-            try? modelContext.save()
+            modelContext.persist(context: "vault-repair")
         }
         if repairedCount > 0 {
             await showBanner("\(repairedCount) original file\(repairedCount == 1 ? "" : "s") restored to vault")

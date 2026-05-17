@@ -101,7 +101,7 @@ struct FolderEditorSheet: View {
             let new = Folder(name: trimmed, colorHex: colorHex)
             modelContext.insert(new)
         }
-        try? modelContext.save()
+        modelContext.persist(context: "folder-editor")
         onDismiss()
     }
 }

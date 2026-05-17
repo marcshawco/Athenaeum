@@ -364,7 +364,7 @@ struct DocumentContextMenu: ViewModifier {
         }
         document.modifiedAt = .now
         document.rebuildSearchableText()
-        try? modelContext.save()
+        modelContext.persist(context: "doc-context-add-tag")
 
         newTagText = ""
         showAddTagSheet = false
@@ -385,7 +385,7 @@ struct DocumentContextMenu: ViewModifier {
             document.folders?.append(folder)
         }
         document.modifiedAt = .now
-        try? modelContext.save()
+        modelContext.persist(context: "doc-context-toggle-folder")
     }
 
     /// Strip every tag attachment off this document without touching the
@@ -395,7 +395,7 @@ struct DocumentContextMenu: ViewModifier {
         document.tags?.removeAll()
         document.modifiedAt = .now
         document.rebuildSearchableText()
-        try? modelContext.save()
+        modelContext.persist(context: "doc-context-clear-tags")
         NotificationCenter.default.post(name: .tagsDidChange, object: nil)
     }
 
@@ -408,7 +408,7 @@ struct DocumentContextMenu: ViewModifier {
         document.tags?.removeAll()
         document.modifiedAt = .now
         document.rebuildSearchableText()
-        try? modelContext.save()
+        modelContext.persist(context: "doc-context-reprocess")
         NotificationCenter.default.post(
             name: .reprocessDocuments,
             object: nil,
@@ -423,7 +423,7 @@ struct DocumentContextMenu: ViewModifier {
         }
         cleanupQuickLookTemp()
         modelContext.delete(document)
-        try? modelContext.save()
+        modelContext.persist(context: "doc-context-delete")
         NotificationCenter.default.post(
             name: .documentsDeleted,
             object: nil,

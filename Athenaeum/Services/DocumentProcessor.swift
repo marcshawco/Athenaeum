@@ -125,7 +125,7 @@ final class DocumentProcessor {
             document.processingError = "Original file data is missing."
             document.modifiedAt = .now
             document.rebuildSearchableText()
-            try? modelContext.save()
+            modelContext.persist(context: "doc-process-missing-data")
             return
         }
         let uti = document.fileType
@@ -185,7 +185,7 @@ final class DocumentProcessor {
             document.processingError = error.localizedDescription
             document.modifiedAt = .now
             document.rebuildSearchableText()
-            try? modelContext.save()
+            modelContext.persist(context: "doc-process-failed")
             throw error
         }
     }
@@ -277,7 +277,7 @@ final class DocumentProcessor {
             document.processingError = error.localizedDescription
             document.modifiedAt = .now
             document.rebuildSearchableText()
-            try? modelContext.save()
+            modelContext.persist(context: "doc-reprocess-failed")
             throw error
         }
     }
@@ -487,7 +487,7 @@ final class DocumentProcessor {
         document.title = trimmed
         document.modifiedAt = .now
         document.rebuildSearchableText()
-        try? modelContext.save()
+        modelContext.persist(context: "doc-rename")
         return true
     }
 

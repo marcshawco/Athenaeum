@@ -522,7 +522,7 @@ struct DocumentGridView: View {
             doc.modifiedAt = .now
             doc.rebuildSearchableText()
         }
-        try? modelContext.save()
+        modelContext.persist(context: "grid-batch-clear-tags")
         NotificationCenter.default.post(name: .tagsDidChange, object: nil)
         // Keep the selection — user might want to immediately re-tag.
     }
