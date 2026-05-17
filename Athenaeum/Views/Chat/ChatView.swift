@@ -477,22 +477,47 @@ struct ChatView: View {
                     withAnimation(Japandi.Motion.snappy) { showSources = true }
                 }
 
+                // Throttle the @State write that drives the streamed
+                // assistant bubble. Without this, every single token from
+                // the model (20–30 tok/s on Qwen 14B) triggers a full
+                // ChatView body re-render, which serializes with the
+                // text-field keystroke handler and produces the visible
+                // chug + 0.6 s HID-response stalls visible in the logs.
+                // 80 ms gives ~12 Hz of UI updates — still smooth-
+                // looking, ~3× fewer re-renders.
+                let throttleNanos: UInt64 = 80_000_000
+                var pending = streamedResponse
+                var lastFlushNanos = DispatchTime.now().uptimeNanoseconds
+                var stopped = false
+
                 for try await token in stream {
                     try Task.checkCancellation()
-                    let candidate = streamedResponse + token
+                    pending += token
 
-                    if let stopRange = candidate.range(of: "<|im_end|>") {
-                        streamedResponse = String(candidate[..<stopRange.lowerBound])
+                    if let stopRange = pending.range(of: "<|im_end|>") {
+                        pending = String(pending[..<stopRange.lowerBound])
                             .trimmingCharacters(in: .whitespacesAndNewlines)
+                        stopped = true
                         break
                     }
-                    if let stopRange = candidate.range(of: "<|im_start|>") {
-                        streamedResponse = String(candidate[..<stopRange.lowerBound])
+                    if let stopRange = pending.range(of: "<|im_start|>") {
+                        pending = String(pending[..<stopRange.lowerBound])
                             .trimmingCharacters(in: .whitespacesAndNewlines)
+                        stopped = true
                         break
                     }
 
-                    streamedResponse = candidate
+                    let now = DispatchTime.now().uptimeNanoseconds
+                    if now - lastFlushNanos >= throttleNanos {
+                        streamedResponse = pending
+                        lastFlushNanos = now
+                    }
+                }
+
+                // Final flush so the bubble shows the complete answer
+                // even if the last batch hadn't hit the throttle window.
+                if stopped || streamedResponse != pending {
+                    streamedResponse = pending
                 }
 
                 let finalContent = streamedResponse.trimmingCharacters(in: .whitespacesAndNewlines)
