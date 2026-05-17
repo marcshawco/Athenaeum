@@ -177,7 +177,7 @@ struct DocumentGridView: View {
             // overlay/background — they take their geometry from the grid.
             LazyVGrid(
                 columns: [GridItem(.adaptive(minimum: 210, maximum: 260), spacing: Japandi.Spacing.lg)],
-                spacing: Japandi.Spacing.lg
+                spacing: Japandi.Spacing.xl
             ) {
                 ForEach(filteredDocuments) { document in
                     cardCell(for: document)
@@ -618,7 +618,9 @@ struct DocumentCardView: View {
             .clipped()
         }
         .padding(Japandi.Spacing.md)
+        .frame(maxWidth: .infinity)
         .frame(height: 290)
+        .clipped()
         .japandiCardHover(isHovered || isSelected)
         .overlay {
             if isSelected {

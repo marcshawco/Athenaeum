@@ -108,7 +108,7 @@ final class SearchService {
             return documents.filter { doc in
                 doc.folders?.contains(where: { $0.id == id }) == true
             }
-        case .chat, .models:
+        case .chat, .models, .allTags:
             return documents
         }
     }

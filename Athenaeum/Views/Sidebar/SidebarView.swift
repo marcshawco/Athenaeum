@@ -9,6 +9,13 @@ struct SidebarView: View {
     @Binding var selectedTag: String?
     @Binding var selectedSection: SidebarSection
     @AppStorage("hiddenTags") private var hiddenTagsRaw: String = ""
+    /// Comma-separated list of tag names the user has pinned to the sidebar.
+    /// Insertion order is preserved (the user can re-order via pin/unpin).
+    /// Capped at `Self.pinnedTagsCap` (10) — anything beyond is dropped on
+    /// pin-add to keep the sidebar from becoming the long scrolling list
+    /// the user wanted to escape.
+    @AppStorage("pinnedTags") private var pinnedTagsRaw: String = ""
+    static let pinnedTagsCap = 10
 
     @State private var showFolderEditor = false
     @State private var folderEditTarget: Folder?
@@ -17,6 +24,38 @@ struct SidebarView: View {
     private var visibleTags: [Tag] {
         let hidden = Set(hiddenTagsRaw.split(separator: ",").map { String($0) })
         return tags.filter { !hidden.contains($0.name) }
+    }
+
+    /// Tags the user has explicitly pinned, in pin order, with the
+    /// up-to-cap limit applied. Each name is resolved back to its `Tag`
+    /// row so we can display color + document count alongside.
+    private var pinnedTags: [Tag] {
+        let order = pinnedTagsRaw
+            .split(separator: ",")
+            .map { String($0) }
+            .filter { !$0.isEmpty }
+        let byName = Dictionary(uniqueKeysWithValues: tags.map { ($0.name, $0) })
+        return order.prefix(Self.pinnedTagsCap).compactMap { byName[$0] }
+    }
+
+    private var pinnedSet: Set<String> {
+        Set(pinnedTagsRaw.split(separator: ",").map { String($0) })
+    }
+
+    /// Pin a tag name to the sidebar. Appends to the end of the pinned
+    /// list. No-op if already pinned or if we're at the cap.
+    func pinTag(_ name: String) {
+        var current = pinnedTagsRaw.split(separator: ",").map { String($0) }
+        guard !current.contains(name) else { return }
+        guard current.count < Self.pinnedTagsCap else { return }
+        current.append(name)
+        pinnedTagsRaw = current.joined(separator: ",")
+    }
+
+    /// Remove a tag name from the pinned-sidebar list.
+    func unpinTag(_ name: String) {
+        let current = pinnedTagsRaw.split(separator: ",").map { String($0) }
+        pinnedTagsRaw = current.filter { $0 != name }.joined(separator: ",")
     }
 
     /// Categories from `DocumentTaxonomy` that currently have at least one
@@ -188,35 +227,65 @@ struct SidebarView: View {
                 sectionHeader(title: "Folders", count: folders.count)
             }
 
-            // MARK: - Tags
-            if !visibleTags.isEmpty {
-                Section {
-                    ForEach(visibleTags) { tag in
-                        HStack(spacing: Japandi.Spacing.xs) {
-                            Circle()
-                                .fill(Color(hex: UInt(tag.colorHex, radix: 16) ?? 0x2A639D))
-                                .frame(width: 6, height: 6)
+            // MARK: - Tags (pinned only)
+            // The sidebar previously listed every tag, which became
+            // unwieldy past ~20. Now it shows only what the user has
+            // explicitly pinned (max 10) and exposes a dedicated
+            // "All Tags" route for browsing the full vocabulary.
+            Section {
+                ForEach(pinnedTags) { tag in
+                    HStack(spacing: Japandi.Spacing.xs) {
+                        Circle()
+                            .fill(Color(hex: UInt(tag.colorHex, radix: 16) ?? 0x2A639D))
+                            .frame(width: 6, height: 6)
 
-                            Text(tag.name.capitalized)
-                                .font(Japandi.Typography.body)
-                                .foregroundStyle(Japandi.Colors.textPrimaryFB)
+                        Text(tag.name.capitalized)
+                            .font(Japandi.Typography.body)
+                            .foregroundStyle(Japandi.Colors.textPrimaryFB)
 
-                            Spacer()
+                        Spacer()
 
-                            Text("\(tag.documents?.count ?? 0)")
-                                .font(Japandi.Typography.caption)
-                                .foregroundStyle(Japandi.Colors.textTertiaryFB)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 1)
-                                .background(Japandi.Colors.surfaceFallback)
-                                .clipShape(Capsule())
-                        }
-                        .tag(SidebarSection.tag(tag.name))
-                        .contentShape(Rectangle())
+                        Text("\(tag.documents?.count ?? 0)")
+                            .font(Japandi.Typography.caption)
+                            .foregroundStyle(Japandi.Colors.textTertiaryFB)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 1)
+                            .background(Japandi.Colors.surfaceFallback)
+                            .clipShape(Capsule())
                     }
-                } header: {
-                    sectionHeader(title: "Tags", count: visibleTags.count)
+                    .tag(SidebarSection.tag(tag.name))
+                    .contentShape(Rectangle())
+                    .contextMenu {
+                        Button {
+                            unpinTag(tag.name)
+                        } label: {
+                            Label("Unpin from sidebar", systemImage: "pin.slash")
+                        }
+                    }
                 }
+
+                // "All Tags" route — always visible so the user can
+                // discover and pin more even when nothing is pinned yet.
+                HStack(spacing: Japandi.Spacing.xs) {
+                    Image(systemName: "tag")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Japandi.Colors.textTertiaryFB)
+                    Text("All Tags")
+                        .font(Japandi.Typography.body)
+                        .foregroundStyle(Japandi.Colors.textSecondaryFB)
+                    Spacer()
+                    Text("\(visibleTags.count)")
+                        .font(Japandi.Typography.caption)
+                        .foregroundStyle(Japandi.Colors.textTertiaryFB)
+                }
+                .tag(SidebarSection.allTags)
+                .contentShape(Rectangle())
+            } header: {
+                sectionHeader(
+                    title: "Tags",
+                    count: pinnedTags.count,
+                    suffix: pinnedTags.count >= Self.pinnedTagsCap ? "(max)" : nil
+                )
             }
 
             // MARK: - By Category (taxonomy)
@@ -350,17 +419,19 @@ struct SidebarView: View {
     /// Eyebrow-styled section header with the count rendered inline as
     /// `TAGS · 6` instead of orphan-floated to the trailing edge of the
     /// row. Keeps the count visually anchored to the title.
-    private func sectionHeader(title: String, count: Int) -> some View {
-        (
-            Text(title.uppercased())
-                .tracking(2)
-                .foregroundStyle(Japandi.Colors.textTertiaryFB)
-            +
-            Text(" · \(count)")
+    private func sectionHeader(title: String, count: Int, suffix: String? = nil) -> some View {
+        var line = Text(title.uppercased())
+            .tracking(2)
+            .foregroundStyle(Japandi.Colors.textTertiaryFB)
+        line = line + Text(" · \(count)")
+            .tracking(1)
+            .foregroundStyle(Japandi.Colors.textTertiaryFB.opacity(0.6))
+        if let suffix {
+            line = line + Text(" \(suffix)")
                 .tracking(1)
-                .foregroundStyle(Japandi.Colors.textTertiaryFB.opacity(0.6))
-        )
-        .font(Japandi.Typography.eyebrow)
+                .foregroundStyle(Japandi.Colors.textTertiaryFB.opacity(0.5))
+        }
+        return line.font(Japandi.Typography.eyebrow)
     }
 
     // MARK: - Sidebar Row Helper
@@ -405,6 +476,9 @@ enum SidebarSection: Hashable, Sendable {
     case processing
     case untagged
     case tag(String)
+    /// Dedicated full-list browser for every Tag row. Surfaced when the
+    /// sidebar only shows pinned tags and the user wants to see everything.
+    case allTags
     /// Filter by a taxonomy category slug (e.g. `real-estate-property-documents`).
     case category(String)
     /// Filter to a user-created folder by its persisted UUID.

@@ -418,6 +418,8 @@ struct ContentView: View {
                     onReprocess: reprocessDocuments
                 )
             }
+        case .allTags:
+            AllTagsView(selectedSection: $selectedSection)
         case .chat:
             if let ragService, let llmService {
                 ChatView(llmService: llmService, ragService: ragService, knowledgeBase: knowledgeBase)
