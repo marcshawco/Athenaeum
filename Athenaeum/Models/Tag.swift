@@ -57,10 +57,10 @@ extension Tag {
         // Financial
         "financial", "banking", "credit", "loan", "mortgage", "investment",
         "retirement", "tax", "receipt", "invoice", "payment", "budget", "statement",
-        // Employment & HR
-        "employment", "resume", "payroll", "contractor",
-        // Education
-        "education", "school", "course", "certification", "transcript",
+        // Employment & HR & career
+        "employment", "resume", "payroll", "contractor", "career",
+        // Education / learning
+        "education", "school", "course", "tutorial", "certification", "transcript",
         // Real estate & property
         "real-estate", "property", "lease", "deed", "hoa", "home-improvement",
         // Insurance
@@ -71,10 +71,11 @@ extension Tag {
         "utilities", "subscription", "membership",
         // Correspondence
         "correspondence", "letter", "email", "notice",
-        // Business / marketing
-        "business", "marketing", "branding", "sales", "client", "vendor",
-        // Project / meetings
-        "project", "meeting-notes", "report", "presentation", "spreadsheet", "roadmap",
+        // Business / marketing / social
+        "business", "entrepreneurship", "marketing", "branding", "sales",
+        "social-media", "client", "vendor",
+        // Project / meetings / notes
+        "project", "meeting-notes", "notes", "report", "presentation", "spreadsheet", "roadmap",
         // Operations / logistics
         "operations", "shipping", "inventory", "procurement", "manufacturing",
         // Retail / hospitality / fashion / food
@@ -88,8 +89,8 @@ extension Tag {
         "form", "template", "manual", "guide", "checklist",
         // Research / writing
         "research", "article", "whitepaper", "essay", "writing",
-        // Software / engineering
-        "software", "engineering", "code", "api", "design", "ui", "ux", "devops", "ai",
+        // Software / engineering / cloud
+        "software", "engineering", "code", "api", "design", "ui", "ux", "devops", "cloud", "ai",
         // Travel
         "travel", "itinerary", "flight", "hotel", "reservation", "vacation",
         // Events / life moments
@@ -100,8 +101,8 @@ extension Tag {
         "government", "election", "military", "veteran",
         // Sports / recreation
         "sports", "hiking", "camping", "fishing", "gaming",
-        // Arts / creative
-        "art", "photography", "music", "film", "graphic-design", "podcast",
+        // Arts / creative / video
+        "art", "photography", "music", "film", "video", "graphic-design", "podcast",
         // Books / reading
         "book",
         // News / journalism
@@ -116,10 +117,10 @@ extension Tag {
         "beauty", "skincare",
         // Pets / animals
         "pet", "dog", "cat",
-        // Productivity / personal development
-        "productivity", "todo", "journal", "meditation", "habit",
-        // Religious / spiritual
-        "spiritual", "religious",
+        // Productivity / personal development / mindset
+        "productivity", "todo", "journal", "meditation", "habit", "mindset",
+        // Religious / spiritual / philosophy
+        "spiritual", "religious", "philosophy",
         // Languages / translation
         "translation", "localization",
         // Home goods / shopping
