@@ -3,6 +3,10 @@ import SwiftData
 
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
+    /// Tag vocabulary feed for the priority-tag picker. Sorted by name
+    /// so the picker is browseable; the picker itself filters by what
+    /// the user has typed in a search field.
+    @Query(sort: \Tag.name) private var allTags: [Tag]
 
     @AppStorage("appearance") private var appearance: AppAppearance = .system
     @AppStorage("defaultViewMode") private var defaultViewMode: String = "grid"
@@ -28,6 +32,12 @@ struct SettingsView: View {
     /// preferences. Empty = no injection. Read by `RAGService` and
     /// `TaggingPrompts` via `UserDefaults.standard.string(forKey:)`.
     @AppStorage("aiContextNote") private var aiContextNote: String = ""
+    /// Comma-separated list of tag names the user wants prioritized
+    /// during chat retrieval. When a retrieved chunk's parent document
+    /// carries any of these, its score is multiplied by the boost
+    /// factor in `RAGService.boostByPriorityTags` so it floats above
+    /// equally-relevant chunks from unprioritized documents.
+    @AppStorage("priorityTagsRaw") private var priorityTagsRaw: String = ""
     @State private var vaultPath = DocumentVaultService.shared.vaultURL.path
     @State private var selection: SettingsTab = .general
     /// First time Settings opens we land on Help & Tour instead of General, so
@@ -390,6 +400,8 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: Japandi.Spacing.lg) {
             aiContextCard
 
+            priorityTagsCard
+
             hardwareTierPickerCard
 
             inferenceEngineCard
@@ -472,6 +484,119 @@ struct SettingsView: View {
                 HStack {
                     Spacer()
                     Text("\(aiContextNote.count) characters · injected into every chat + auto-tag prompt")
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(Japandi.Colors.textTertiaryFB)
+                }
+            }
+        }
+        .padding(Japandi.Spacing.md)
+        .background(Japandi.Colors.surfaceFallback)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(Japandi.Colors.borderFallback, lineWidth: 0.5)
+        )
+    }
+
+    // MARK: - Priority tags (retrieval re-ranker)
+
+    private var priorityTagNames: [String] {
+        priorityTagsRaw
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+            .filter { !$0.isEmpty }
+    }
+
+    private func togglePriorityTag(_ name: String) {
+        let normalized = name.lowercased()
+        var current = priorityTagNames
+        if let idx = current.firstIndex(of: normalized) {
+            current.remove(at: idx)
+        } else {
+            current.append(normalized)
+        }
+        priorityTagsRaw = current.joined(separator: ",")
+    }
+
+    private var priorityTagsCard: some View {
+        VStack(alignment: .leading, spacing: Japandi.Spacing.sm) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Priority Tags")
+                        .font(.system(size: 16, weight: .medium, design: .serif))
+                        .foregroundStyle(Japandi.Colors.textPrimaryFB)
+                    Text("Tags you want surfaced first when chatting. Chunks from a priority-tagged document get a ×1.35 score boost during retrieval, so a borderline medical match floats above a stronger unrelated one.")
+                        .font(Japandi.Typography.caption)
+                        .foregroundStyle(Japandi.Colors.textTertiaryFB)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer()
+                if !priorityTagNames.isEmpty {
+                    Button {
+                        priorityTagsRaw = ""
+                    } label: {
+                        Text("Clear")
+                            .font(Japandi.Typography.caption)
+                            .foregroundStyle(Japandi.Colors.textTertiaryFB)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
+            if allTags.isEmpty {
+                Text("No tags yet. Import a document and let auto-tag populate your library, then come back to pick which tags you want prioritized.")
+                    .font(Japandi.Typography.caption)
+                    .foregroundStyle(Japandi.Colors.textTertiaryFB)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.vertical, Japandi.Spacing.xs)
+            } else {
+                let selected = Set(priorityTagNames)
+                FlowLayout(spacing: 6) {
+                    ForEach(allTags) { tag in
+                        let isSelected = selected.contains(tag.name.lowercased())
+                        Button {
+                            togglePriorityTag(tag.name)
+                        } label: {
+                            HStack(spacing: 4) {
+                                if isSelected {
+                                    Image(systemName: "checkmark")
+                                        .font(.system(size: 9, weight: .bold))
+                                }
+                                Text(tag.name)
+                                    .font(.system(size: 11))
+                            }
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(
+                                isSelected
+                                    ? Japandi.Colors.accentFallback.opacity(0.85)
+                                    : Japandi.Colors.surfaceRaisedFB
+                            )
+                            .foregroundStyle(
+                                isSelected
+                                    ? Color.white
+                                    : Japandi.Colors.textSecondaryFB
+                            )
+                            .clipShape(Capsule())
+                            .overlay(
+                                Capsule()
+                                    .strokeBorder(
+                                        isSelected
+                                            ? Color.clear
+                                            : Japandi.Colors.borderFallback,
+                                        lineWidth: 0.5
+                                    )
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+
+            if !priorityTagNames.isEmpty {
+                HStack {
+                    Spacer()
+                    Text("\(priorityTagNames.count) prioritized · ×1.35 score boost during chat retrieval")
                         .font(.system(size: 10, design: .monospaced))
                         .foregroundStyle(Japandi.Colors.textTertiaryFB)
                 }

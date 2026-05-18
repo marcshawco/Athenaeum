@@ -877,7 +877,8 @@ struct ChatView: View {
                 title: document.title,
                 text: text,
                 documentDate: document.documentDate,
-                importedAt: document.importedAt
+                importedAt: document.importedAt,
+                tagNames: document.tags?.map(\.name) ?? []
             )
         }
     }

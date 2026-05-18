@@ -161,12 +161,20 @@ final class RAGService {
         let documentLookup: [UUID: String] = Dictionary(
             uniqueKeysWithValues: fallbackDocuments.map { ($0.id, $0.title) }
         )
+        // Tag lookup powers the priority-tag re-ranker. Built once
+        // alongside `documentLookup` so the retrieval pipeline can score
+        // a chunk's parent document against the user's
+        // priority-tag set without round-tripping back to SwiftData.
+        let documentTagLookup: [UUID: Set<String>] = Dictionary(
+            uniqueKeysWithValues: fallbackDocuments.map { ($0.id, Set($0.tagNames.map { $0.lowercased() })) }
+        )
         let results = await retrieveRelevantChunks(
             queryEmbedding: queryEmbedding,
             maxContext: maxContext,
             knownDocumentIDs: liveIDs,
             query: retrievalQuery,
             documentTitles: documentLookup,
+            documentTags: documentTagLookup,
             extraBoostTokens: kbBoostTokens
         )
 
@@ -336,6 +344,7 @@ final class RAGService {
         knownDocumentIDs: Set<UUID>? = nil,
         query: String = "",
         documentTitles: [UUID: String] = [:],
+        documentTags: [UUID: Set<String>] = [:],
         extraBoostTokens: Set<String> = []
     ) async -> [SearchResult] {
         // Over-fetch so that filtering, boosting and diversity capping all
@@ -343,6 +352,11 @@ final class RAGService {
         // and the per-doc diversity cap come from the active hardware tier.
         let tunables = HardwareProfiler.activeTunables
         let overfetch = max(maxContext * tunables.retrievalOverfetchMultiplier, 30)
+
+        // Read the user's priority-tag set once per retrieval. Empty
+        // when the user hasn't pinned any priority tags — the boost
+        // step is a no-op in that case.
+        let priorityTags = Self.priorityTagSetFromDefaults()
 
         func process(_ results: [SearchResult]) -> [SearchResult] {
             let live = filterToLive(results, knownDocumentIDs: knownDocumentIDs)
@@ -352,7 +366,12 @@ final class RAGService {
                 titles: documentTitles,
                 extraTokens: extraBoostTokens
             )
-            let diversified = capPerDocument(boosted, perDocLimit: tunables.perDocLimit)
+            let prioritized = boostByPriorityTags(
+                boosted,
+                priorityTags: priorityTags,
+                documentTags: documentTags
+            )
+            let diversified = capPerDocument(prioritized, perDocLimit: tunables.perDocLimit)
             return Array(diversified.prefix(maxContext))
         }
 
@@ -362,6 +381,40 @@ final class RAGService {
 
         let looseResults = await vectorStore.search(query: queryEmbedding, topK: overfetch, threshold: -1)
         return process(looseResults)
+    }
+
+    /// Pull the user's priority-tag set from `@AppStorage("priorityTagsRaw")`.
+    /// The Settings UI persists a comma-separated list; we parse, lowercase,
+    /// and drop empties so the runtime comparison can be case-insensitive
+    /// against tag names that always live as lowercase slugs.
+    private static func priorityTagSetFromDefaults() -> Set<String> {
+        let raw = UserDefaults.standard.string(forKey: "priorityTagsRaw") ?? ""
+        let names = raw.split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+            .filter { !$0.isEmpty }
+        return Set(names)
+    }
+
+    /// Re-rank step: if a chunk's parent document carries any of the
+    /// user's priority tags, multiply its score so it floats above
+    /// equally-relevant chunks from unprioritized documents. The
+    /// multiplier is large enough to lift a borderline match above a
+    /// strong unprioritized one (×1.35) but small enough that a
+    /// genuinely unrelated priority-tagged doc can't beat a tight
+    /// semantic match. No-op when either set is empty.
+    private func boostByPriorityTags(
+        _ results: [SearchResult],
+        priorityTags: Set<String>,
+        documentTags: [UUID: Set<String>]
+    ) -> [SearchResult] {
+        guard !priorityTags.isEmpty, !documentTags.isEmpty else { return results }
+        let boostFactor: Float = 1.35
+        let boosted: [SearchResult] = results.map { result in
+            guard let tags = documentTags[result.entry.documentID],
+                  !tags.isDisjoint(with: priorityTags) else { return result }
+            return SearchResult(entry: result.entry, score: result.score * boostFactor)
+        }
+        return boosted.sorted { $0.score > $1.score }
     }
 
     /// Drop chunks whose document is no longer in the caller's live set.
@@ -657,6 +710,21 @@ struct RAGDocumentContext: Sendable {
     let text: String
     let documentDate: Date?
     let importedAt: Date
+    /// Tag names attached to the document. Used by the retrieval
+    /// re-ranker to boost chunks whose document is in the user's
+    /// priority-tag set (Settings → AI Models → Priority Tags).
+    /// Empty when the document has no tags or the tag relationship
+    /// couldn't be resolved at context-build time.
+    let tagNames: [String]
+
+    init(id: UUID, title: String, text: String, documentDate: Date?, importedAt: Date, tagNames: [String] = []) {
+        self.id = id
+        self.title = title
+        self.text = text
+        self.documentDate = documentDate
+        self.importedAt = importedAt
+        self.tagNames = tagNames
+    }
 }
 
 struct RAGSource: Identifiable, Sendable {
