@@ -526,8 +526,24 @@ enum TaggingPrompts {
         // the system prompt + JSON output budget on Qwen 7B/14B Q4_K_M.
         let body = String(text.prefix(8000))
 
+        // Optional user-authored "About You" note from Settings → AI Models.
+        // When set, gives the tagger a sense of the user's role and frequent
+        // filing domains so ambiguous documents get tagged in line with how
+        // the user actually thinks about them.
+        let aboutTheUser: String = {
+            let raw = (UserDefaults.standard.string(forKey: "aiContextNote") ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !raw.isEmpty else { return "" }
+            return """
+
+        ABOUT THE USER (standing context — use it to disambiguate the document, not to override THE ONE RULE):
+        \(raw)
+
+        """
+        }()
+
         return """
-        You are ATHENS's document filing assistant. Tag the document below.
+        You are ATHENS's document filing assistant. Tag the document below.\(aboutTheUser)
 
         THE ONE RULE that overrides everything else:
         EVERY tag must point to a specific phrase you can quote from the document. If a single mention of the word "tax" is the only thing supporting a `tax` tag, do NOT use it. Tags describe what the document IS, not topics the document casually mentions.

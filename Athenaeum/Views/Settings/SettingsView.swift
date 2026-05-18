@@ -21,6 +21,13 @@ struct SettingsView: View {
     /// LLM during auto-tag so the user's machine stays cool/quiet at the
     /// cost of slower tagging. See `LlamaInferenceConfig`.
     @AppStorage("lowPowerTagging") private var lowPowerTagging: Bool = false
+
+    /// Free-form "about you" note. Prepended to the chat system prompt
+    /// and the tagger prompt so the local LLM has a persistent sense
+    /// of who the user is, their domains of interest, and any standing
+    /// preferences. Empty = no injection. Read by `RAGService` and
+    /// `TaggingPrompts` via `UserDefaults.standard.string(forKey:)`.
+    @AppStorage("aiContextNote") private var aiContextNote: String = ""
     @State private var vaultPath = DocumentVaultService.shared.vaultURL.path
     @State private var selection: SettingsTab = .general
     /// First time Settings opens we land on Help & Tour instead of General, so
@@ -381,6 +388,8 @@ struct SettingsView: View {
 
     private var aiTab: some View {
         VStack(alignment: .leading, spacing: Japandi.Spacing.lg) {
+            aiContextCard
+
             hardwareTierPickerCard
 
             inferenceEngineCard
@@ -423,6 +432,58 @@ struct SettingsView: View {
             .frame(maxWidth: .infinity)
             .scrollDisabled(true)
         }
+    }
+
+    // MARK: - AI Context (about-you note)
+
+    private var aiContextCard: some View {
+        VStack(alignment: .leading, spacing: Japandi.Spacing.sm) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("AI Context")
+                        .font(.system(size: 16, weight: .medium, design: .serif))
+                        .foregroundStyle(Japandi.Colors.textPrimaryFB)
+                    Text("A few lines about you that the local model reads on every chat turn and every auto-tag — domain, role, standing preferences. Empty is fine.")
+                        .font(Japandi.Typography.caption)
+                        .foregroundStyle(Japandi.Colors.textTertiaryFB)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer()
+            }
+
+            TextEditor(text: $aiContextNote)
+                .font(Japandi.Typography.body)
+                .foregroundStyle(Japandi.Colors.textPrimaryFB)
+                .frame(minHeight: 120, maxHeight: 200)
+                .padding(8)
+                .background(Japandi.Colors.surfaceRaisedFB)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .strokeBorder(Japandi.Colors.borderFallback, lineWidth: 0.5)
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+
+            if aiContextNote.isEmpty {
+                Text("Example: \"I'm a security professional in LA studying cloud engineering at WGU. Files I care about most: medical (Kaiser), career planning, cloud certifications. I like concise technical answers — skip the marketing fluff.\"")
+                    .font(Japandi.Typography.caption)
+                    .foregroundStyle(Japandi.Colors.textTertiaryFB)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                HStack {
+                    Spacer()
+                    Text("\(aiContextNote.count) characters · injected into every chat + auto-tag prompt")
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(Japandi.Colors.textTertiaryFB)
+                }
+            }
+        }
+        .padding(Japandi.Spacing.md)
+        .background(Japandi.Colors.surfaceFallback)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(Japandi.Colors.borderFallback, lineWidth: 0.5)
+        )
     }
 
     // MARK: - Hardware tier picker
