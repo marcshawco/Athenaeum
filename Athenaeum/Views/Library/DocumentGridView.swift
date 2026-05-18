@@ -176,8 +176,8 @@ struct DocumentGridView: View {
             // window shrunk). Marquee + gesture catcher attach as
             // overlay/background — they take their geometry from the grid.
             LazyVGrid(
-                columns: [GridItem(.adaptive(minimum: 210, maximum: 260), spacing: Japandi.Spacing.lg)],
-                spacing: Japandi.Spacing.xl
+                columns: [GridItem(.adaptive(minimum: 210, maximum: 260), spacing: Japandi.Spacing.xl)],
+                spacing: Japandi.Spacing.xxl
             ) {
                 ForEach(filteredDocuments) { document in
                     cardCell(for: document)
