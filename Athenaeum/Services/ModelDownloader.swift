@@ -72,11 +72,14 @@ final class ModelDownloader {
         let repoID: String
         let filename: String
         let expectedSize: Int64 // bytes, approximate
-        /// Optional SHA-256 hex string of the canonical model file. When
-        /// set, `didFinishDownload` rejects any download whose hash
-        /// doesn't match (protects against MITM, CDN compromise, or
-        /// upstream tampering). Hashes should be populated as each
-        /// model file is verified against the upstream repository.
+        /// SHA-256 hex string of the canonical model file. When set,
+        /// `didFinishDownload` rejects any download whose hash doesn't
+        /// match (protects against MITM, CDN compromise, or upstream
+        /// tampering). Values below are pinned from a known-good local
+        /// install on 2026-05-18; if Hugging Face ever republishes a
+        /// model under the same filename with a new hash, the download
+        /// will reject and the user gets a "Checksum mismatch" status
+        /// — at which point we update the constant and ship.
         let expectedSHA256: String?
 
         init(role: LLMRole, repoID: String, filename: String, expectedSize: Int64, expectedSHA256: String? = nil) {
@@ -99,13 +102,15 @@ final class ModelDownloader {
                 role: .embedding,
                 repoID: "nomic-ai/nomic-embed-text-v1.5-GGUF",
                 filename: "nomic-embed-text-v1.5.Q4_K_M.gguf",
-                expectedSize: 84_000_000
+                expectedSize: 84_000_000,
+                expectedSHA256: "d4e388894e09cf3816e8b0896d81d265b55e7a9fff9ab03fe8bf4ef5e11295ac"
             )
             let vision = HFModelInfo(
                 role: .vision,
                 repoID: "openbmb/MiniCPM-V-2_6-gguf",
                 filename: "ggml-model-Q4_K_M.gguf",
-                expectedSize: 5_000_000_000
+                expectedSize: 5_000_000_000,
+                expectedSHA256: "3a4078d53b46f22989adbf998ce5a3fd090b6541f112d7e936eb4204a04100b1"
             )
 
             switch tier {
@@ -114,11 +119,13 @@ final class ModelDownloader {
                     HFModelInfo(role: .tagger,
                                 repoID: "bartowski/Qwen2.5-3B-Instruct-GGUF",
                                 filename: "Qwen2.5-3B-Instruct-Q4_K_M.gguf",
-                                expectedSize: 2_000_000_000),
+                                expectedSize: 2_000_000_000,
+                                expectedSHA256: "9c9f56a391a3abbd5b89d0245bf6106081bcc3173119d4229235dd9d23253f94"),
                     HFModelInfo(role: .chat,
                                 repoID: "bartowski/Qwen2.5-3B-Instruct-GGUF",
                                 filename: "Qwen2.5-3B-Instruct-Q4_K_M.gguf",
-                                expectedSize: 2_000_000_000),
+                                expectedSize: 2_000_000_000,
+                                expectedSHA256: "9c9f56a391a3abbd5b89d0245bf6106081bcc3173119d4229235dd9d23253f94"),
                     embedding,
                 ]
             case .standard:
@@ -126,11 +133,13 @@ final class ModelDownloader {
                     HFModelInfo(role: .tagger,
                                 repoID: "bartowski/Qwen2.5-7B-Instruct-GGUF",
                                 filename: "Qwen2.5-7B-Instruct-Q4_K_M.gguf",
-                                expectedSize: 4_700_000_000),
+                                expectedSize: 4_700_000_000,
+                                expectedSHA256: "65b8fcd92af6b4fefa935c625d1ac27ea29dcb6ee14589c55a8f115ceaaa1423"),
                     HFModelInfo(role: .chat,
                                 repoID: "bartowski/Qwen2.5-7B-Instruct-GGUF",
                                 filename: "Qwen2.5-7B-Instruct-Q4_K_M.gguf",
-                                expectedSize: 4_700_000_000),
+                                expectedSize: 4_700_000_000,
+                                expectedSHA256: "65b8fcd92af6b4fefa935c625d1ac27ea29dcb6ee14589c55a8f115ceaaa1423"),
                     embedding,
                     vision,
                 ]
@@ -139,11 +148,13 @@ final class ModelDownloader {
                     HFModelInfo(role: .tagger,
                                 repoID: "bartowski/Qwen2.5-14B-Instruct-GGUF",
                                 filename: "Qwen2.5-14B-Instruct-Q4_K_M.gguf",
-                                expectedSize: 9_000_000_000),
+                                expectedSize: 9_000_000_000,
+                                expectedSHA256: "e47ad95dad6ff848b431053b375adb5d39321290ea2c638682577dafca87c008"),
                     HFModelInfo(role: .chat,
                                 repoID: "bartowski/Qwen2.5-14B-Instruct-GGUF",
                                 filename: "Qwen2.5-14B-Instruct-Q4_K_M.gguf",
-                                expectedSize: 9_000_000_000),
+                                expectedSize: 9_000_000_000,
+                                expectedSHA256: "e47ad95dad6ff848b431053b375adb5d39321290ea2c638682577dafca87c008"),
                     embedding,
                     vision,
                 ]
