@@ -6,6 +6,10 @@ The app is built with SwiftUI, SwiftData, Vision, PDFKit, and a bundled llama.cp
 
 **Privacy policy:** [shawhause.com/athens-privacy.html](https://shawhause.com/athens-privacy.html)
 
+> **2.9.2 — Local model shutdown on quit.**
+>
+> ATHENS now registers its llama.cpp runtime with the macOS app lifecycle. When the app quits, active chat streams are canceled, in-flight vision model loads are stopped, and every loaded local LLM context is unloaded before macOS completes termination. The local model service is registered again on app launch so tagging, OCR cleanup, embeddings, and chat can warm up normally when the app is open.
+
 > **2.9.1 — Direct AirDrop from documents.**
 >
 > Document right-click menus now include a native **AirDrop** action that sends the original file directly to nearby Apple devices. The existing macOS Share Sheet remains available for Mail, Messages, Notes, AirDrop, and third-party share extensions.
@@ -116,6 +120,8 @@ On first launch the active tier's tunables are written once (gated by `didApplyI
 - **Tagger + Chat** share a single GGUF file. `LocalLLMService.contextForRole` notices the shared filename and reuses one in-RAM `LlamaContext` instead of loading the weights twice.
 - **Embedding** uses Nomic Embed Text v1.5 (768-dim, contrastively trained). `RAGService` prepends the model's required `search_document:` / `search_query:` task prefixes.
 - **Vision** uses MiniCPM-V 2.6 for enhanced OCR on scanned PDFs and photographed receipts when Apple's native Vision framework alone isn't enough. Skipped entirely on Compact tier.
+
+Loaded model contexts are tied to the app lifecycle. `ContentView` registers the `LocalLLMService` when the app opens, and the macOS termination delegate delays quit just long enough for `shutdownForAppTermination()` to cancel active streams and unload all cached Llama contexts.
 
 ### Fallbacks and migrations
 

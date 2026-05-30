@@ -234,6 +234,8 @@ final class LocalLLMService: LLMServiceProtocol, @unchecked Sendable {
     private var visionContext: LlamaVisionContext?
     private let nativeOCR = VisionOCRService()
     private let lock = NSLock()
+    private var streamTasks: [UUID: Task<Void, Never>] = [:]
+    private var isShuttingDown = false
 
     /// Set when the hardware tier changes (or any other event that
     /// shifts `LlamaInferenceConfig` values). Active requests run to
@@ -260,17 +262,37 @@ final class LocalLLMService: LLMServiceProtocol, @unchecked Sendable {
     }
 
     func loadModel(_ descriptor: LLMModelDescriptor) async throws {
+        guard !lock.withLock({ isShuttingDown }) else {
+            throw CancellationError()
+        }
+
         let path = modelManager.modelPath(for: descriptor)
 
         if descriptor.role == .vision {
             let vc = LlamaVisionContext(descriptor: descriptor, modelPath: path)
             try await vc.load()
-            lock.withLock { visionContext = vc }
+            let shouldUnload = lock.withLock { () -> Bool in
+                guard !isShuttingDown else { return true }
+                visionContext = vc
+                return false
+            }
+            if shouldUnload {
+                await vc.unload()
+                throw CancellationError()
+            }
         } else {
             let cfg: LlamaInferenceConfig = loadConfig(for: descriptor.role)
             let ctx = LlamaContext(descriptor: descriptor, modelPath: path, config: cfg)
             try await ctx.load()
-            lock.withLock { contexts[descriptor.role] = ctx }
+            let shouldUnload = lock.withLock { () -> Bool in
+                guard !isShuttingDown else { return true }
+                contexts[descriptor.role] = ctx
+                return false
+            }
+            if shouldUnload {
+                await ctx.unload()
+                throw CancellationError()
+            }
         }
 
         await MainActor.run { () -> Void in modelManager.loadedModels.insert(descriptor.role) }
@@ -311,6 +333,10 @@ final class LocalLLMService: LLMServiceProtocol, @unchecked Sendable {
     }
 
     func generateFromImage(imageData: Data, prompt: String, maxTokens: Int) async throws -> String {
+        guard !lock.withLock({ isShuttingDown }) else {
+            throw CancellationError()
+        }
+
         // Lazy-reload hook: same as `contextForRole(_:)`. Drop any stale
         // vision context (and any sibling text contexts) so the load
         // below uses the latest `LlamaInferenceConfig`.
@@ -360,7 +386,13 @@ final class LocalLLMService: LLMServiceProtocol, @unchecked Sendable {
 
     func generateStream(role: LLMRole, messages: [ChatMessage], maxTokens: Int, temperature: Float) -> AsyncThrowingStream<String, Error> {
         AsyncThrowingStream { continuation in
+            let taskID = UUID()
             let task = Task {
+                defer {
+                    lock.withLock {
+                        _ = streamTasks.removeValue(forKey: taskID)
+                    }
+                }
                 do {
                     let ctx = try await self.contextForRole(role)
                     var cfg = self.generationConfig(for: role)
@@ -374,6 +406,14 @@ final class LocalLLMService: LLMServiceProtocol, @unchecked Sendable {
                 } catch {
                     continuation.finish(throwing: error)
                 }
+            }
+            let shouldCancel = lock.withLock { () -> Bool in
+                guard !isShuttingDown else { return true }
+                streamTasks[taskID] = task
+                return false
+            }
+            if shouldCancel {
+                task.cancel()
             }
             continuation.onTermination = { _ in
                 task.cancel()
@@ -397,6 +437,49 @@ final class LocalLLMService: LLMServiceProtocol, @unchecked Sendable {
     }
 
     // MARK: - Context Management
+
+    func shutdownForAppTermination() async {
+        let snapshot = lock.withLock { () -> (contexts: [LlamaContext], visionContext: LlamaVisionContext?, visionLoadTask: Task<Void, Error>?, streamTasks: [Task<Void, Never>]) in
+            isShuttingDown = true
+            hasStaleConfigs = false
+
+            var seen = Set<ObjectIdentifier>()
+            var uniqueContexts: [LlamaContext] = []
+            for ctx in contexts.values where seen.insert(ObjectIdentifier(ctx)).inserted {
+                uniqueContexts.append(ctx)
+            }
+
+            let vc = visionContext
+            let loadTask = visionLoadTask
+            let streams = Array(streamTasks.values)
+
+            contexts.removeAll()
+            visionContext = nil
+            visionLoadTask = nil
+            streamTasks.removeAll()
+
+            return (uniqueContexts, vc, loadTask, streams)
+        }
+
+        for task in snapshot.streamTasks {
+            task.cancel()
+        }
+        snapshot.visionLoadTask?.cancel()
+        if let visionLoadTask = snapshot.visionLoadTask {
+            try? await visionLoadTask.value
+        }
+
+        for ctx in snapshot.contexts {
+            await ctx.unload()
+        }
+        if let vc = snapshot.visionContext {
+            await vc.unload()
+        }
+
+        await MainActor.run { () -> Void in
+            modelManager.loadedModels.removeAll()
+        }
+    }
 
     private func generationConfig(for role: LLMRole) -> LlamaInferenceConfig {
         switch role {
@@ -456,6 +539,10 @@ final class LocalLLMService: LLMServiceProtocol, @unchecked Sendable {
     }
 
     private func contextForRole(_ role: LLMRole) async throws -> LlamaContext {
+        guard !lock.withLock({ isShuttingDown }) else {
+            throw CancellationError()
+        }
+
         // Lazy-reload hook: if any tier-driven config (n_ctx, GPU layers,
         // threads) has changed since this context was loaded, drop every
         // cached context now so the load path below picks up the new

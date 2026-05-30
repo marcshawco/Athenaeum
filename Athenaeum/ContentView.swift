@@ -683,6 +683,7 @@ struct ContentView: View {
         }
         let service = LocalLLMService(modelManager: modelManager)
         llmService = service
+        LocalLLMLifecycleCoordinator.shared.register(service)
         modelDownloader = ModelDownloader(modelsDirectory: modelManager.modelsDirectory)
 
         // RAG must be created before processor so it can be passed in

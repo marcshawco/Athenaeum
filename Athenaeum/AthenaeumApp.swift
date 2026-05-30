@@ -3,6 +3,7 @@ import SwiftData
 
 @main
 struct AthenaeumApp: App {
+    @NSApplicationDelegateAdaptor(AppLifecycleDelegate.self) private var appDelegate
     @AppStorage("appearance") private var appearance: AppAppearance = .system
 
     init() {
