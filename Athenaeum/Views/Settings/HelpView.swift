@@ -158,8 +158,8 @@ struct HelpView: View {
             ),
             FAQEntry(
                 q: "Can I back this up?",
-                a: "Yes. Time Machine works because everything lives in your home folder under the app's sandboxed container. To make a portable copy, use Settings ▸ Storage ▸ Reveal Vault to find your originals folder, and zip that together with the Application Support folder to capture the AI-derived metadata.",
-                d: "SwiftData store: <container>/Library/Application Support/Athenaeum/default.store. Models: …/Athenaeum/Models. MLX bundles: …/Athenaeum/MLXBundles. The container path is ~/Library/Containers/com.shawhause.athens/Data."
+                a: "Yes. Time Machine works because everything lives in your home folder. For a portable copy, open Settings ▸ Storage and use Create Backup. ATHENS makes one encrypted .athensbackup file with originals, SwiftData JSON, and vector stores for moving to a new Mac.",
+                d: "Backup includes manifest.json, SwiftData/swiftdata-export.json, Originals/Vault, Originals/Recovered when needed, and VectorStores/vector_store*.json. The passphrase is required to unlock it."
             ),
             FAQEntry(
                 q: "Which models do I actually need?",

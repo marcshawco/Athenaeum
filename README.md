@@ -10,6 +10,10 @@ The app is built with SwiftUI, SwiftData, Vision, PDFKit, and a bundled llama.cp
 >
 > Onboarding now includes a privacy trust screen before the import step, making the local-first contract explicit: documents, originals, metadata, vector indexes, and AI processing stay on the Mac, and users can export or delete their data anytime.
 
+> **2.10.0 — Encrypted migration backup.**
+>
+> Settings → Storage now includes a one-click encrypted backup flow. ATHENS writes a passphrase-protected `.athensbackup` archive containing vault originals, a SwiftData JSON snapshot of documents/tags/folders/word-bank/chat records, recovered in-database originals when vault files are missing, and local `vector_store*.json` files for moving a library to a new Mac.
+
 > **2.9.2 — Local model shutdown on quit.**
 >
 > ATHENS now registers its llama.cpp runtime with the macOS app lifecycle. When the app quits, active chat streams are canceled, in-flight vision model loads are stopped, and every loaded local LLM context is unloaded before macOS completes termination. The local model service is registered again on app launch so tagging, OCR cleanup, embeddings, and chat can warm up normally when the app is open.
@@ -45,6 +49,7 @@ The app is built with SwiftUI, SwiftData, Vision, PDFKit, and a bundled llama.cp
 - Tracks titles, filenames, file types, sizes, correspondents, dates, summaries, tags, processing state, and searchable text in SwiftData.
 - Builds a local vector index for document chunks and supports document chat through RAG.
 - Shows a trust screen during onboarding before import, explaining that documents, originals, metadata, vector indexes, and AI processing stay local and that data can be exported or deleted anytime.
+- Creates an encrypted `.athensbackup` migration archive from Settings → Storage, bundling vault originals, SwiftData JSON, recovered originals, and local vector stores.
 - **Auto-tiers the model lineup to the host Mac** — 8 GB MacBook Airs run a Compact set (Qwen 3B); 16 GB Macs get Standard (Qwen 7B + MiniCPM-V); 24+ GB machines unlock Performance (Qwen 14B + MiniCPM-V). User-overridable in Settings.
 - Sidebar tags are user-pinned (cap 10); a dedicated **All Tags** screen browses the full vocabulary with A–Z grouping, search, and right-click pin/unpin.
 - Bulk batch actions for selected documents: tag, auto-tag, clear tags, auto-name, export, delete.
@@ -165,6 +170,18 @@ xcodebuild -project Athenaeum.xcodeproj -scheme Athenaeum -configuration Debug b
 
 The `Tools/` directory contains standalone Swift smoke tests for core flows. They are not currently wired into an Xcode test target, but they document and exercise the expected behavior for vault storage, import processing, fallback tagging, OCR, RAG, and export paths.
 
+## Migration Backups
+
+Use **Settings → Storage → Create Backup...** to make a portable encrypted backup. The app asks where to save the archive, then asks for a passphrase. Keep that passphrase somewhere safe; it is required to unlock the backup on another Mac and is not stored by ATHENS.
+
+The backup format is a single `.athensbackup` file. It includes:
+
+- `manifest.json` with app/build, source Mac, counts, and source paths.
+- `SwiftData/swiftdata-export.json` with documents, tags, folders, word-bank entries, and saved chat records.
+- `Originals/Vault/` with files from the document vault.
+- `Originals/Recovered/` with any original file blobs still present in SwiftData when a vault file is missing.
+- `VectorStores/` with local `vector_store*.json` files from Application Support.
+
 ## Privacy
 
 ATHENS is intentionally local-first:
@@ -173,5 +190,6 @@ ATHENS is intentionally local-first:
 - Metadata is stored locally with SwiftData.
 - Vector indexes are stored locally.
 - AI inference is designed to run through local GGUF models.
+- Migration backups are encrypted locally before they are written to the chosen destination.
 
 The app includes network client entitlement so it can download models from Hugging Face when requested.

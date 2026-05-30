@@ -947,9 +947,71 @@ struct SettingsView: View {
 
     @State private var integrityReport: VaultIntegrityReport?
     @State private var integrityChecking = false
+    @State private var backupProgress: BackupProgress?
+    @State private var backupResult: BackupSummary?
+    @State private var backupError: String?
+    @State private var backupRunning = false
 
     private var storageTab: some View {
         Form {
+            Section("Migration Backup") {
+                VStack(alignment: .leading, spacing: Japandi.Spacing.xs) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Encrypted one-click backup")
+                                .font(Japandi.Typography.body)
+                                .foregroundStyle(Japandi.Colors.textPrimaryFB)
+                            Text("Packages vault originals, a SwiftData JSON export, and local vector stores into one passphrase-protected .athensbackup archive for moving to a new Mac.")
+                                .font(Japandi.Typography.caption)
+                                .foregroundStyle(Japandi.Colors.textTertiaryFB)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Spacer()
+                        if backupRunning {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Button("Create Backup...") {
+                                createMigrationBackup()
+                            }
+                            .controlSize(.small)
+                        }
+                    }
+
+                    if let backupProgress {
+                        ProgressView(value: backupProgress.fraction)
+                        Text(backupProgress.message)
+                            .font(Japandi.Typography.caption)
+                            .foregroundStyle(Japandi.Colors.textTertiaryFB)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+
+                    if let backupResult {
+                        HStack(spacing: 6) {
+                            Image(systemName: "checkmark.seal.fill")
+                                .font(.system(size: 11))
+                                .foregroundStyle(Japandi.Colors.accentFallback)
+                            Text("Saved \(backupResult.documentCount) document records, \(backupResult.originalFileCount) originals, and \(backupResult.vectorStoreCount) vector stores to \(backupResult.destination.lastPathComponent).")
+                                .font(Japandi.Typography.caption)
+                                .foregroundStyle(Japandi.Colors.textSecondaryFB)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+
+                    if let backupError {
+                        HStack(spacing: 6) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.system(size: 11))
+                                .foregroundStyle(Japandi.Colors.warmFallback)
+                            Text(backupError)
+                                .font(Japandi.Typography.caption)
+                                .foregroundStyle(Japandi.Colors.warmFallback)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+            }
+
             Section("Integrity") {
                 VStack(alignment: .leading, spacing: Japandi.Spacing.xs) {
                     HStack {
@@ -1096,6 +1158,94 @@ struct SettingsView: View {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         return appSupport.appendingPathComponent("Athenaeum/vector_store.json").path
     }
+
+    // MARK: - Migration backup
+
+    private func createMigrationBackup() {
+        guard let destination = backupDestinationURL(),
+              let passphrase = backupPassphrase() else {
+            return
+        }
+
+        backupRunning = true
+        backupResult = nil
+        backupError = nil
+        backupProgress = BackupProgress(message: "Starting backup...", completedBytes: 0, totalBytes: 0)
+
+        Task { @MainActor in
+            do {
+                let summary = try await BackupService.shared.createBackup(
+                    to: destination,
+                    passphrase: passphrase,
+                    context: integrityContext
+                ) { progress in
+                    backupProgress = progress
+                }
+                backupResult = summary
+                backupProgress = nil
+            } catch {
+                backupError = error.localizedDescription
+                NSSound.beep()
+            }
+            backupRunning = false
+        }
+    }
+
+    private func backupDestinationURL() -> URL? {
+        let panel = NSSavePanel()
+        panel.title = "Create ATHENS Backup"
+        panel.message = "Choose where to save the encrypted migration archive."
+        panel.prompt = "Create Backup"
+        panel.nameFieldStringValue = "ATHENS Backup \(Self.backupDateFormatter.string(from: Date())).athensbackup"
+        panel.canCreateDirectories = true
+
+        guard panel.runModal() == .OK, let url = panel.url else { return nil }
+        if url.pathExtension.lowercased() == "athensbackup" {
+            return url
+        }
+        return url.deletingPathExtension().appendingPathExtension("athensbackup")
+    }
+
+    private func backupPassphrase() -> String? {
+        while true {
+            let alert = NSAlert()
+            alert.messageText = "Protect Backup"
+            alert.informativeText = "Use this passphrase to unlock the archive on the new Mac. ATHENS does not store it."
+            alert.alertStyle = .informational
+            alert.addButton(withTitle: "Continue")
+            alert.addButton(withTitle: "Cancel")
+
+            let passphraseField = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
+            passphraseField.placeholderString = "Passphrase"
+            let confirmField = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
+            confirmField.placeholderString = "Confirm passphrase"
+
+            let stack = NSStackView(views: [passphraseField, confirmField])
+            stack.orientation = .vertical
+            stack.spacing = 8
+            stack.frame = NSRect(x: 0, y: 0, width: 260, height: 56)
+            alert.accessoryView = stack
+
+            guard alert.runModal() == .alertFirstButtonReturn else { return nil }
+
+            let passphrase = passphraseField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            let confirmation = confirmField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            if passphrase.count >= 8, passphrase == confirmation {
+                return passphrase
+            }
+
+            backupError = passphrase.count < 8
+                ? "Backup passphrase must be at least 8 characters."
+                : "Backup passphrases did not match."
+            NSSound.beep()
+        }
+    }
+
+    private static let backupDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH.mm"
+        return formatter
+    }()
 
     // MARK: - Vault integrity
 
