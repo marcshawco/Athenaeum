@@ -5,6 +5,9 @@ struct OnboardingView: View {
     @AppStorage("appIconVariant") private var appIconVariantRaw: String = AppIconVariant.ink.rawValue
     @State private var currentPage = 0
 
+    private static let pageCount = 5
+    private static let lastPageIndex = pageCount - 1
+
     private var brandMarkAsset: String {
         (AppIconVariant(rawValue: appIconVariantRaw) ?? .ink).assetName
     }
@@ -15,8 +18,9 @@ struct OnboardingView: View {
             TabView(selection: $currentPage) {
                 welcomePage.tag(0)
                 modelsPage.tag(1)
-                importPage.tag(2)
-                readyPage.tag(3)
+                trustPage.tag(2)
+                importPage.tag(3)
+                readyPage.tag(4)
             }
             .tabViewStyle(.automatic)
 
@@ -39,7 +43,7 @@ struct OnboardingView: View {
 
                 // Page dots
                 HStack(spacing: Japandi.Spacing.xs) {
-                    ForEach(0..<4, id: \.self) { page in
+                    ForEach(0..<Self.pageCount, id: \.self) { page in
                         Circle()
                             .fill(page == currentPage
                                   ? Japandi.Colors.accentFallback
@@ -51,7 +55,7 @@ struct OnboardingView: View {
 
                 Spacer()
 
-                if currentPage < 3 {
+                if currentPage < Self.lastPageIndex {
                     Button("Next") {
                         withAnimation(Japandi.Motion.gentle) { currentPage += 1 }
                     }
@@ -160,6 +164,45 @@ struct OnboardingView: View {
                 .font(Japandi.Typography.caption)
                 .foregroundStyle(Japandi.Colors.textTertiaryFB)
                 .multilineTextAlignment(.center)
+
+            Spacer()
+        }
+        .padding(Japandi.Spacing.lg)
+    }
+
+    // MARK: - Trust
+
+    private var trustPage: some View {
+        VStack(spacing: Japandi.Spacing.lg) {
+            Spacer()
+
+            Image(systemName: "lock.shield")
+                .font(.system(size: 44, weight: .ultraLight))
+                .foregroundStyle(Japandi.Colors.accentFallback)
+                .accessibilityHidden(true)
+
+            VStack(spacing: Japandi.Spacing.sm) {
+                Text("Your Documents Stay Private")
+                    .font(Japandi.Typography.title)
+                    .foregroundStyle(Japandi.Colors.textPrimaryFB)
+
+                Text("Before you import anything sensitive, here is what ATHENS keeps local.")
+                    .font(Japandi.Typography.body)
+                    .foregroundStyle(Japandi.Colors.textSecondaryFB)
+                    .multilineTextAlignment(.center)
+            }
+
+            VStack(alignment: .leading, spacing: Japandi.Spacing.sm) {
+                TrustRow(text: "Your documents stay on your Mac.")
+                TrustRow(text: "Originals stay in your local vault.")
+                TrustRow(text: "Metadata stays local.")
+                TrustRow(text: "Vector indexes stay local.")
+                TrustRow(text: "AI runs through local models.")
+                TrustRow(text: "You can export or delete your data anytime.")
+            }
+            .padding(Japandi.Spacing.md)
+            .frame(maxWidth: 360)
+            .premiumPane()
 
             Spacer()
         }
@@ -328,6 +371,25 @@ private struct FormatRow: View {
                 .font(Japandi.Typography.mono)
                 .foregroundStyle(Japandi.Colors.textTertiaryFB)
         }
+    }
+}
+
+private struct TrustRow: View {
+    let text: String
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: Japandi.Spacing.sm) {
+            Image(systemName: "checkmark.circle")
+                .font(.system(size: 13, weight: .light))
+                .foregroundStyle(Japandi.Colors.accentFallback)
+                .accessibilityHidden(true)
+
+            Text(text)
+                .font(Japandi.Typography.body)
+                .foregroundStyle(Japandi.Colors.textPrimaryFB)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .accessibilityElement(children: .combine)
     }
 }
 

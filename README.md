@@ -6,6 +6,10 @@ The app is built with SwiftUI, SwiftData, Vision, PDFKit, and a bundled llama.cp
 
 **Privacy policy:** [shawhause.com/athens-privacy.html](https://shawhause.com/athens-privacy.html)
 
+> **2.9.3 — Onboarding trust screen.**
+>
+> Onboarding now includes a privacy trust screen before the import step, making the local-first contract explicit: documents, originals, metadata, vector indexes, and AI processing stay on the Mac, and users can export or delete their data anytime.
+
 > **2.9.2 — Local model shutdown on quit.**
 >
 > ATHENS now registers its llama.cpp runtime with the macOS app lifecycle. When the app quits, active chat streams are canceled, in-flight vision model loads are stopped, and every loaded local LLM context is unloaded before macOS completes termination. The local model service is registered again on app launch so tagging, OCR cleanup, embeddings, and chat can warm up normally when the app is open.
@@ -40,6 +44,7 @@ The app is built with SwiftUI, SwiftData, Vision, PDFKit, and a bundled llama.cp
 - Classifies documents with a 1,100+-term controlled tag vocabulary and local LLM tagging.
 - Tracks titles, filenames, file types, sizes, correspondents, dates, summaries, tags, processing state, and searchable text in SwiftData.
 - Builds a local vector index for document chunks and supports document chat through RAG.
+- Shows a trust screen during onboarding before import, explaining that documents, originals, metadata, vector indexes, and AI processing stay local and that data can be exported or deleted anytime.
 - **Auto-tiers the model lineup to the host Mac** — 8 GB MacBook Airs run a Compact set (Qwen 3B); 16 GB Macs get Standard (Qwen 7B + MiniCPM-V); 24+ GB machines unlock Performance (Qwen 14B + MiniCPM-V). User-overridable in Settings.
 - Sidebar tags are user-pinned (cap 10); a dedicated **All Tags** screen browses the full vocabulary with A–Z grouping, search, and right-click pin/unpin.
 - Bulk batch actions for selected documents: tag, auto-tag, clear tags, auto-name, export, delete.
