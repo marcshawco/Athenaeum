@@ -413,6 +413,9 @@ struct DocumentDetailView: View {
                     .font(.system(size: 12))
                     .lineSpacing(3)
                     .foregroundStyle(Japandi.Colors.inspectorInk2)
+
+                AIDisclaimerView(tone: .inspector, isFramed: false)
+                    .padding(.top, Japandi.Spacing.xxs)
             }
             .padding(.horizontal, 22)
             .padding(.vertical, 14)

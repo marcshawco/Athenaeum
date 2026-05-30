@@ -199,6 +199,8 @@ struct OnboardingView: View {
                 TrustRow(text: "Vector indexes stay local.")
                 TrustRow(text: "AI runs through local models.")
                 TrustRow(text: "You can export or delete your data anytime.")
+                AIDisclaimerView(isFramed: false)
+                    .padding(.top, Japandi.Spacing.xs)
             }
             .padding(Japandi.Spacing.md)
             .frame(maxWidth: 360)

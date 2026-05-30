@@ -356,34 +356,38 @@ struct ChatView: View {
     // MARK: - Input Bar
 
     private var inputBar: some View {
-        HStack(spacing: Japandi.Spacing.sm) {
-            TextField("Ask about your documents...", text: $inputText, axis: .vertical)
-                .textFieldStyle(.plain)
-                .font(Japandi.Typography.body)
-                .lineLimit(1...5)
-                .onSubmit { if !isGenerating { sendMessage() } }
-                .focused($isInputFocused)
+        VStack(alignment: .leading, spacing: Japandi.Spacing.xs) {
+            HStack(spacing: Japandi.Spacing.sm) {
+                TextField("Ask about your documents...", text: $inputText, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .font(Japandi.Typography.body)
+                    .lineLimit(1...5)
+                    .onSubmit { if !isGenerating { sendMessage() } }
+                    .focused($isInputFocused)
 
-            Button {
-                if isGenerating {
-                    stopGeneration()
-                } else {
-                    sendMessage()
+                Button {
+                    if isGenerating {
+                        stopGeneration()
+                    } else {
+                        sendMessage()
+                    }
+                } label: {
+                    Image(systemName: isGenerating ? "stop.fill" : "arrow.up")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 26, height: 26)
+                        .background(
+                            inputText.isEmpty && !isGenerating
+                                ? Japandi.Colors.borderFallback
+                                : Japandi.Colors.accentFallback
+                        )
+                        .clipShape(Circle())
                 }
-            } label: {
-                Image(systemName: isGenerating ? "stop.fill" : "arrow.up")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(.white)
-                    .frame(width: 26, height: 26)
-                    .background(
-                        inputText.isEmpty && !isGenerating
-                            ? Japandi.Colors.borderFallback
-                            : Japandi.Colors.accentFallback
-                    )
-                    .clipShape(Circle())
+                .buttonStyle(.plain)
+                .disabled(inputText.isEmpty && !isGenerating)
             }
-            .buttonStyle(.plain)
-            .disabled(inputText.isEmpty && !isGenerating)
+
+            AIDisclaimerView(isFramed: false)
         }
         .padding(.horizontal, Japandi.Spacing.md)
         .padding(.vertical, Japandi.Spacing.sm)

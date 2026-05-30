@@ -31,6 +31,8 @@ struct ModelStatusView: View {
                         .foregroundStyle(Japandi.Colors.textSecondaryFB)
                 }
 
+                AIDisclaimerView()
+
                 // System info
                 systemInfoCard
 

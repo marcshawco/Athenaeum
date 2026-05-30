@@ -105,6 +105,12 @@ struct HelpView: View {
                 title: "Everything stays local",
                 body: "Nothing leaves your Mac. The models run on-device, files live in a Finder folder you control, and the only network calls ATHENS makes are when you click Download in Model Status. The status bar at the bottom says \u{201C}local · private\u{201D} for a reason."
             )
+
+            calloutCard(
+                icon: "exclamationmark.triangle",
+                title: "AI disclaimer",
+                body: AIDisclaimerView.text
+            )
         }
     }
 
@@ -138,7 +144,7 @@ struct HelpView: View {
             ),
             FAQEntry(
                 q: "Why did ATHENS tag my document wrong?",
-                a: "Local AI is good but not perfect. Click the document, hit the chevron next to the type pill, and pick the right type from the 500-type list. The next time you reprocess, the model learns from the broader set of corrected examples — but more practically, your override sticks immediately.",
+                a: "ATHENS can make mistakes. Verify against source docs. Not legal, medical, tax, or financial advice. Click the document, hit the chevron next to the type pill, and pick the right type from the 500-type list. Your override sticks immediately.",
                 d: "Override stored as Document.documentTypeSlug + categorySlug. Searchable text is rebuilt so search and \u{201C}By Category\u{201D} reflect it instantly."
             ),
             FAQEntry(

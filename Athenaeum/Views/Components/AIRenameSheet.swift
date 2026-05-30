@@ -42,6 +42,9 @@ struct AIRenameSheet: View {
             Text("The local model read each document and proposed a clean name. Review, edit, or cancel.")
                 .font(Japandi.Typography.caption)
                 .foregroundStyle(Japandi.Colors.textTertiaryFB)
+
+            AIDisclaimerView(isFramed: false)
+                .padding(.top, Japandi.Spacing.xs)
         }
     }
 

@@ -220,6 +220,8 @@ struct SettingsView: View {
                 .lineSpacing(3)
                 .fixedSize(horizontal: false, vertical: true)
 
+            AIDisclaimerView()
+
             Spacer()
         }
     }
@@ -398,6 +400,8 @@ struct SettingsView: View {
 
     private var aiTab: some View {
         VStack(alignment: .leading, spacing: Japandi.Spacing.lg) {
+            AIDisclaimerView()
+
             aiContextCard
 
             priorityTagsCard

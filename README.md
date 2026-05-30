@@ -6,6 +6,10 @@ The app is built with SwiftUI, SwiftData, Vision, PDFKit, and a bundled llama.cp
 
 **Privacy policy:** [shawhause.com/athens-privacy.html](https://shawhause.com/athens-privacy.html)
 
+> **2.10.1 — AI disclaimer surfaces.**
+>
+> Chat, onboarding, Help, AI settings, model status, document summaries, and AI rename review now show a consistent disclaimer: ATHENS can make mistakes, source documents should be verified, and outputs are not legal, medical, tax, or financial advice.
+
 > **2.9.3 — Onboarding trust screen.**
 >
 > Onboarding now includes a privacy trust screen before the import step, making the local-first contract explicit: documents, originals, metadata, vector indexes, and AI processing stay on the Mac, and users can export or delete their data anytime.
@@ -49,6 +53,7 @@ The app is built with SwiftUI, SwiftData, Vision, PDFKit, and a bundled llama.cp
 - Tracks titles, filenames, file types, sizes, correspondents, dates, summaries, tags, processing state, and searchable text in SwiftData.
 - Builds a local vector index for document chunks and supports document chat through RAG.
 - Shows a trust screen during onboarding before import, explaining that documents, originals, metadata, vector indexes, and AI processing stay local and that data can be exported or deleted anytime.
+- Shows an AI disclaimer in key AI surfaces: ATHENS can make mistakes, source docs should be verified, and outputs are not legal, medical, tax, or financial advice.
 - Creates an encrypted `.athensbackup` migration archive from Settings → Storage, bundling vault originals, SwiftData JSON, recovered originals, and local vector stores.
 - **Auto-tiers the model lineup to the host Mac** — 8 GB MacBook Airs run a Compact set (Qwen 3B); 16 GB Macs get Standard (Qwen 7B + MiniCPM-V); 24+ GB machines unlock Performance (Qwen 14B + MiniCPM-V). User-overridable in Settings.
 - Sidebar tags are user-pinned (cap 10); a dedicated **All Tags** screen browses the full vocabulary with A–Z grouping, search, and right-click pin/unpin.
