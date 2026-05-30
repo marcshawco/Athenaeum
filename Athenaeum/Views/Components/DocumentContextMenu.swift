@@ -95,13 +95,22 @@ struct DocumentContextMenu: ViewModifier {
                     Label("Copy", systemImage: "doc.on.doc")
                 }
 
+                // AirDrop — direct native handoff for sending the original
+                // file to nearby Apple devices from the right-click menu.
+                Button {
+                    presentAirDrop()
+                } label: {
+                    Label("AirDrop", systemImage: "airdrop")
+                }
+                .disabled(!canShareOriginal)
+
                 // Share — native macOS Share Sheet (Mail, Messages, AirDrop, etc.)
                 Button {
                     presentShareSheet()
                 } label: {
                     Label("Share", systemImage: "square.and.arrow.up")
                 }
-                .disabled(existingStoredURL == nil && document.fileData == nil)
+                .disabled(!canShareOriginal)
 
                 // Export
                 Button {
@@ -277,20 +286,38 @@ struct DocumentContextMenu: ViewModifier {
         NSPasteboard.general.setString(text, forType: .string)
     }
 
+    private func shareableOriginalURL() -> URL? {
+        if let stored = existingStoredURL {
+            return stored
+        }
+
+        guard let data = document.fileData else { return nil }
+        let tempURL = temporaryURL(for: document)
+        do {
+            try data.write(to: tempURL, options: .atomic)
+            return tempURL
+        } catch {
+            NSSound.beep()
+            return nil
+        }
+    }
+
+    /// Opens the native AirDrop picker directly for the original file.
+    private func presentAirDrop() {
+        guard let url = shareableOriginalURL(),
+              let airDrop = NSSharingService(named: .sendViaAirDrop),
+              airDrop.canPerform(withItems: [url]) else {
+            NSSound.beep()
+            return
+        }
+
+        airDrop.perform(withItems: [url])
+    }
+
     /// Opens the macOS Share Sheet anchored to the key window. Works for
     /// AirDrop, Mail, Messages, Notes, and any third-party share extension.
     private func presentShareSheet() {
-        let urlToShare: URL?
-        if let stored = existingStoredURL {
-            urlToShare = stored
-        } else if let data = document.fileData {
-            let tempURL = temporaryURL(for: document)
-            try? data.write(to: tempURL, options: .atomic)
-            urlToShare = tempURL
-        } else {
-            urlToShare = nil
-        }
-        guard let url = urlToShare else { return }
+        guard let url = shareableOriginalURL() else { return }
         let picker = NSSharingServicePicker(items: [url])
         if let window = NSApp.keyWindow,
            let contentView = window.contentView {
@@ -456,6 +483,10 @@ struct DocumentContextMenu: ViewModifier {
             return data
         }
         return document.fileData
+    }
+
+    private var canShareOriginal: Bool {
+        existingStoredURL != nil || document.fileData != nil
     }
 }
 

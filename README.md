@@ -6,6 +6,10 @@ The app is built with SwiftUI, SwiftData, Vision, PDFKit, and a bundled llama.cp
 
 **Privacy policy:** [shawhause.com/athens-privacy.html](https://shawhause.com/athens-privacy.html)
 
+> **2.9.1 — Direct AirDrop from documents.**
+>
+> Document right-click menus now include a native **AirDrop** action that sends the original file directly to nearby Apple devices. The existing macOS Share Sheet remains available for Mail, Messages, Notes, AirDrop, and third-party share extensions.
+
 > **2.4.0 / 2.4.1 — Mac App Store readiness sweep.**
 >
 > Submission gates: bundle identifier moved from the placeholder `marcshaw.Athenaeum` to the reverse-DNS `com.shawhause.athens`; new `PrivacyInfo.xcprivacy` declares the two required-reason APIs the app actually uses (UserDefaults, FileTimestamp); `CFBundleDisplayName` and `NSHumanReadableCopyright` now live in `Info.plist` where they're actually picked up; `LSApplicationCategoryType` reconciled to `productivity`; `MACOSX_DEPLOYMENT_TARGET` widened from 15.7 to 15.0; unused `files.downloads.read-write` and `REGISTER_APP_GROUPS` entitlements dropped.
@@ -35,7 +39,7 @@ The app is built with SwiftUI, SwiftData, Vision, PDFKit, and a bundled llama.cp
 - **Auto-tiers the model lineup to the host Mac** — 8 GB MacBook Airs run a Compact set (Qwen 3B); 16 GB Macs get Standard (Qwen 7B + MiniCPM-V); 24+ GB machines unlock Performance (Qwen 14B + MiniCPM-V). User-overridable in Settings.
 - Sidebar tags are user-pinned (cap 10); a dedicated **All Tags** screen browses the full vocabulary with A–Z grouping, search, and right-click pin/unpin.
 - Bulk batch actions for selected documents: tag, auto-tag, clear tags, auto-name, export, delete.
-- Exports originals, extracted text, JSON metadata, or CSV catalog rows.
+- Exports originals, extracted text, JSON metadata, or CSV catalog rows, and shares originals through the macOS Share Sheet or direct AirDrop from the right-click menu.
 
 ## Project Structure
 
