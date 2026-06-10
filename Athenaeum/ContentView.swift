@@ -893,6 +893,7 @@ struct ContentView: View {
         var types: [UTType] = [
             .pdf, .plainText, .rtf, .rtfd, .html, .text,
             .image, .png, .jpeg, .tiff, .heic, .gif, .bmp, .webP,
+            .audio, .movie, .audiovisualContent,
             .commaSeparatedText, .tabSeparatedText, .spreadsheet,
             .presentation, .epub,
             .sourceCode, .json, .xml, .yaml,

@@ -14,6 +14,10 @@ The app is built with SwiftUI, SwiftData, Vision, PDFKit, and a bundled llama.cp
 >
 > Chat, onboarding, Help, AI settings, model status, document summaries, and AI rename review now show a consistent disclaimer: ATHENS can make mistakes, source documents should be verified, and outputs are not legal, medical, tax, or financial advice.
 
+> **2.12.0 — Local media transcription MVP.**
+>
+> ATHENS can now import common audio and video files and route them through the document pipeline as transcripts when local `whisper-cli` and a GGML Whisper model are installed. Transcripts become searchable text, feed tagging and summaries, and are indexed for RAG chat. For this MVP, place `whisper-cli` under `~/Library/Application Support/Athenaeum/Whisper/` or use Homebrew's `whisper-cli`; place a model such as `ggml-small.en.bin` under `~/Library/Application Support/Athenaeum/Whisper/Models/`.
+
 > **2.9.3 — Onboarding trust screen.**
 >
 > Onboarding now includes a privacy trust screen before the import step, making the local-first contract explicit: documents, originals, metadata, vector indexes, and AI processing stay on the Mac, and users can export or delete their data anytime.
@@ -50,9 +54,10 @@ The app is built with SwiftUI, SwiftData, Vision, PDFKit, and a bundled llama.cp
 
 ## What It Does
 
-- Imports PDFs, images, text files, Word documents, spreadsheets, presentations, emails, calendar files, and other common document formats.
+- Imports PDFs, images, text files, Word documents, spreadsheets, presentations, emails, calendar files, audio, video, and other common document formats.
 - Stores originals in a local document vault, defaulting to `~/Documents/Athenaeum Library`.
 - Extracts text from PDFs and common text formats, with Apple Vision OCR for images and scanned documents.
+- Transcribes imported audio and video files locally when `whisper-cli` and a Whisper GGML model are installed.
 - Classifies documents with a 1,100+-term controlled tag vocabulary and local LLM tagging.
 - Tracks titles, filenames, file types, sizes, correspondents, dates, summaries, tags, processing state, and searchable text in SwiftData.
 - Builds a local vector index for document chunks and supports document chat through RAG, with optional Tag Chat filters that limit answers to selected document tags.
@@ -92,6 +97,7 @@ ATHENS starts in `AthenaeumApp`, which creates the SwiftData model container for
 - `DocumentVaultMonitor` watches the vault for Finder-added documents.
 - `DocumentProcessor` orchestrates import, text extraction, metadata refinement, classification, persistence, and RAG indexing.
 - `VisionOCRService` handles native OCR for images and scanned documents.
+- `TranscriptionService` prepares media as temporary WAV audio and calls local Whisper for audio/video transcripts.
 - `LocalLLMService` uses `LlamaContext` actors to load and run local models. Two roles that point at the same file share a single in-RAM context.
 - `VectorStore` persists embeddings for local semantic search. It detects embedding-dimension mismatches on load so the library can be re-embedded when the embedder changes.
 - `RAGService` chunks documents, generates retrieval-tuned embeddings with the dedicated embedding model, retrieves relevant context, and streams chat answers with citations.
@@ -107,6 +113,15 @@ ATHENS looks for GGUF models in:
 ```text
 ~/Library/Application Support/Athenaeum/Models
 ```
+
+For audio/video transcription, ATHENS also checks for local Whisper files:
+
+```text
+~/Library/Application Support/Athenaeum/Whisper/whisper-cli
+~/Library/Application Support/Athenaeum/Whisper/Models/ggml-small.en.bin
+```
+
+Homebrew `whisper-cli` is also detected at `/opt/homebrew/bin/whisper-cli` or `/usr/local/bin/whisper-cli`. You can override paths while developing with `ATHENS_WHISPER_CLI` and `ATHENS_WHISPER_MODEL`.
 
 ### Hardware tiers
 

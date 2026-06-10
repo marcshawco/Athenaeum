@@ -244,7 +244,9 @@ final class DocumentVaultService {
             "csv", "tsv", "json", "xml", "md", "markdown", "html", "htm",
             "png", "jpg", "jpeg", "tif", "tiff", "heic", "webp", "gif",
             "xls", "xlsx", "numbers", "ppt", "pptx", "key",
-            "eml", "msg", "ics"
+            "eml", "msg", "ics",
+            "mp3", "m4a", "aac", "wav", "aiff", "aif", "caf", "flac",
+            "mp4", "m4v", "mov", "avi", "mkv", "webm"
         ]
         if allowedExtensions.contains(ext) { return true }
 

@@ -253,6 +253,9 @@ final class AutoScanCoordinator {
         "json", "yaml", "yml", "toml", "ini", "conf", "log", "xml", "plist",
         // Images (OCR via Apple Vision)
         "png", "jpg", "jpeg", "tif", "tiff", "heic", "heif", "webp", "gif", "bmp",
+        // Audio / video (transcribed locally when Whisper is configured)
+        "mp3", "m4a", "aac", "wav", "aiff", "aif", "caf", "flac",
+        "mp4", "m4v", "mov", "avi", "mkv", "webm",
     ]
 }
 

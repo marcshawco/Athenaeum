@@ -14,6 +14,7 @@ final class DocumentProcessor {
     private let ragService: RAGService?
     private let modelContext: ModelContext
     private let ocrService = VisionOCRService()
+    private let transcriptionService = TranscriptionService()
     private let metadataExtractor = DocumentMetadataExtractor()
     private let vaultService: DocumentVaultService
 
@@ -316,6 +317,11 @@ final class DocumentProcessor {
                 prompt: TaggingPrompts.ocrPrompt,
                 maxTokens: 2048
             )
+        }
+
+        // Audio / video → local Whisper transcript when configured.
+        if transcriptionService.canHandle(url: url, uti: uti) {
+            return try await transcriptionService.transcribe(url: url, uti: uti)
         }
 
         // HTML → strip tags into plain text via NSAttributedString.
