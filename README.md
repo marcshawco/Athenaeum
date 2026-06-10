@@ -6,6 +6,10 @@ The app is built with SwiftUI, SwiftData, Vision, PDFKit, and a bundled llama.cp
 
 **Privacy policy:** [shawhause.com/athens-privacy.html](https://shawhause.com/athens-privacy.html)
 
+> **2.11.0 — Tag Chat.**
+>
+> Chat now includes an optional Tag Chat filter. Users can select one or more document tags, and local RAG retrieval only uses processed documents with at least one selected tag. Clearing the filter returns chat to the full indexed archive.
+
 > **2.10.1 — AI disclaimer surfaces.**
 >
 > Chat, onboarding, Help, AI settings, model status, document summaries, and AI rename review now show a consistent disclaimer: ATHENS can make mistakes, source documents should be verified, and outputs are not legal, medical, tax, or financial advice.
@@ -51,7 +55,7 @@ The app is built with SwiftUI, SwiftData, Vision, PDFKit, and a bundled llama.cp
 - Extracts text from PDFs and common text formats, with Apple Vision OCR for images and scanned documents.
 - Classifies documents with a 1,100+-term controlled tag vocabulary and local LLM tagging.
 - Tracks titles, filenames, file types, sizes, correspondents, dates, summaries, tags, processing state, and searchable text in SwiftData.
-- Builds a local vector index for document chunks and supports document chat through RAG.
+- Builds a local vector index for document chunks and supports document chat through RAG, with optional Tag Chat filters that limit answers to selected document tags.
 - Shows a trust screen during onboarding before import, explaining that documents, originals, metadata, vector indexes, and AI processing stay local and that data can be exported or deleted anytime.
 - Shows an AI disclaimer in key AI surfaces: ATHENS can make mistakes, source docs should be verified, and outputs are not legal, medical, tax, or financial advice.
 - Creates an encrypted `.athensbackup` migration archive from Settings → Storage, bundling vault originals, SwiftData JSON, recovered originals, and local vector stores.

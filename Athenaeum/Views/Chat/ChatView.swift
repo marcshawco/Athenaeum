@@ -7,6 +7,7 @@ struct ChatView: View {
     var knowledgeBase: KnowledgeBaseService?
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \Document.importedAt, order: .reverse) private var documents: [Document]
+    @Query(sort: \Tag.name) private var tags: [Tag]
     /// Persisted conversations, newest first. Drives the history popover.
     @Query(sort: \ChatConversation.modifiedAt, order: .reverse)
     private var conversations: [ChatConversation]
@@ -35,6 +36,7 @@ struct ChatView: View {
     @State private var renameText: String = ""
     @State private var showClearConfirm = false
     @State private var hasRestoredOnAppear = false
+    @State private var selectedChatTags: Set<String> = []
 
     /// Survives across navigation (citation click → library → back to chat)
     /// so the same conversation re-opens instead of resetting to empty.
@@ -357,6 +359,8 @@ struct ChatView: View {
 
     private var inputBar: some View {
         VStack(alignment: .leading, spacing: Japandi.Spacing.xs) {
+            tagChatBar
+
             HStack(spacing: Japandi.Spacing.sm) {
                 TextField("Ask about your documents...", text: $inputText, axis: .vertical)
                     .textFieldStyle(.plain)
@@ -392,6 +396,94 @@ struct ChatView: View {
         .padding(.horizontal, Japandi.Spacing.md)
         .padding(.vertical, Japandi.Spacing.sm)
         .background(Japandi.Colors.surfaceRaisedFB)
+    }
+
+    // MARK: - Tag Chat
+
+    private var tagChatBar: some View {
+        HStack(spacing: Japandi.Spacing.xs) {
+            Menu {
+                if availableChatTags.isEmpty {
+                    Text("No document tags")
+                } else {
+                    ForEach(availableChatTags) { tag in
+                        Button {
+                            toggleChatTag(tag.name)
+                        } label: {
+                            Label(
+                                tagMenuTitle(for: tag),
+                                systemImage: selectedChatTags.contains(tag.name) ? "checkmark.circle.fill" : "circle"
+                            )
+                        }
+                    }
+
+                    if !selectedChatTags.isEmpty {
+                        Divider()
+                        Button("Clear Tag Chat filters") {
+                            selectedChatTags.removeAll()
+                        }
+                    }
+                }
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: selectedChatTags.isEmpty ? "tag" : "tag.fill")
+                        .font(.system(size: 10, weight: .medium))
+                    Text(selectedChatTags.isEmpty ? "Tag Chat" : "\(selectedChatTags.count) tag\(selectedChatTags.count == 1 ? "" : "s")")
+                        .font(Japandi.Typography.caption)
+                }
+                .foregroundStyle(selectedChatTags.isEmpty ? Japandi.Colors.textSecondaryFB : Japandi.Colors.accentFallback)
+                .padding(.horizontal, Japandi.Spacing.xs)
+                .padding(.vertical, Japandi.Spacing.xxs + 1)
+                .background(
+                    selectedChatTags.isEmpty
+                        ? Japandi.Colors.bgFallback.opacity(0.55)
+                        : Japandi.Colors.accentFallback.opacity(0.08)
+                )
+                .clipShape(Capsule())
+                .overlay(
+                    Capsule().strokeBorder(
+                        selectedChatTags.isEmpty
+                            ? Japandi.Colors.borderFallback
+                            : Japandi.Colors.accentFallback.opacity(0.24),
+                        lineWidth: 0.5
+                    )
+                )
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .help("Limit chat retrieval to documents with selected tags")
+            .accessibilityLabel("Tag Chat filters")
+
+            if selectedChatTags.isEmpty {
+                Text("All documents")
+                    .font(Japandi.Typography.caption)
+                    .foregroundStyle(Japandi.Colors.textTertiaryFB)
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(selectedChatTagOptions) { tag in
+                            TagPillView(
+                                name: tag.name,
+                                colorHex: tag.colorHex,
+                                isSelected: true,
+                                onRemove: { selectedChatTags.remove(tag.name) }
+                            )
+                        }
+                    }
+                }
+
+                Button {
+                    selectedChatTags.removeAll()
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Japandi.Colors.textTertiaryFB)
+                }
+                .buttonStyle(.plain)
+                .help("Clear Tag Chat filters")
+                .accessibilityLabel("Clear Tag Chat filters")
+            }
+        }
     }
 
     // MARK: - Empty State
@@ -452,9 +544,21 @@ struct ChatView: View {
 
         let userMessage = ChatMessage(role: .user, content: text)
         let history = messages
-        let fallbackDocuments = documentContexts
+        let activeTagFilter = selectedChatTags
+        let fallbackDocuments = documentContexts(filteredBy: activeTagFilter)
         messages.append(userMessage)
         inputText = ""
+
+        if !activeTagFilter.isEmpty && fallbackDocuments.isEmpty {
+            messages.append(ChatMessage(
+                role: .assistant,
+                content: "No processed documents match the selected Tag Chat filter."
+            ))
+            ensureCurrentConversation()
+            saveCurrentConversation()
+            return
+        }
+
         isGenerating = true
         streamedResponse = ""
         // Materialize the conversation on first send and persist the user
@@ -871,10 +975,20 @@ struct ChatView: View {
     }
 
     private var documentContexts: [RAGDocumentContext] {
-        documents.compactMap { document in
+        documentContexts(filteredBy: [])
+    }
+
+    private func documentContexts(filteredBy selectedTags: Set<String>) -> [RAGDocumentContext] {
+        let normalizedSelection = Set(selectedTags.map { $0.lowercased() })
+        return documents.compactMap { document -> RAGDocumentContext? in
             guard document.processingStatus == .complete,
                   let text = document.extractedText?.trimmingCharacters(in: .whitespacesAndNewlines),
                   !text.isEmpty else { return nil }
+            let tagNames = document.tags?.map(\.name) ?? []
+            let normalizedDocumentTags = Set(tagNames.map { $0.lowercased() })
+            if !normalizedSelection.isEmpty && normalizedDocumentTags.isDisjoint(with: normalizedSelection) {
+                return nil
+            }
 
             return RAGDocumentContext(
                 id: document.id,
@@ -882,9 +996,41 @@ struct ChatView: View {
                 text: text,
                 documentDate: document.documentDate,
                 importedAt: document.importedAt,
-                tagNames: document.tags?.map(\.name) ?? []
+                tagNames: tagNames
             )
         }
+    }
+
+    private var availableChatTags: [ChatTagOption] {
+        let processedDocumentTags = documents.reduce(into: [String: Int]()) { counts, document in
+            guard document.processingStatus == .complete,
+                  let text = document.extractedText?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !text.isEmpty else { return }
+            for tag in document.tags ?? [] {
+                counts[tag.name, default: 0] += 1
+            }
+        }
+
+        return tags.compactMap { tag in
+            guard let count = processedDocumentTags[tag.name], count > 0 else { return nil }
+            return ChatTagOption(name: tag.name, colorHex: tag.colorHex, documentCount: count)
+        }
+    }
+
+    private var selectedChatTagOptions: [ChatTagOption] {
+        availableChatTags.filter { selectedChatTags.contains($0.name) }
+    }
+
+    private func toggleChatTag(_ name: String) {
+        if selectedChatTags.contains(name) {
+            selectedChatTags.remove(name)
+        } else {
+            selectedChatTags.insert(name)
+        }
+    }
+
+    private func tagMenuTitle(for tag: ChatTagOption) -> String {
+        "\(tag.name) (\(tag.documentCount))"
     }
 
     private func repairIndexIfNeeded() async {
@@ -895,6 +1041,13 @@ struct ChatView: View {
         }
         hasAttemptedIndexRepair = true
     }
+}
+
+private struct ChatTagOption: Identifiable, Hashable {
+    var id: String { name }
+    let name: String
+    let colorHex: String
+    let documentCount: Int
 }
 
 // MARK: - Chat Bubble
