@@ -245,8 +245,60 @@ final class LocalLLMService: LLMServiceProtocol, @unchecked Sendable {
     /// fresh config (n_ctx, GPU layers, threads).
     private var hasStaleConfigs = false
 
+    // MARK: System headroom monitors
+    //
+    // Loaded GGUF contexts hold gigabytes of unified memory. ATHENS is a
+    // background companion — the user should be able to leave it running,
+    // open Chrome, and watch a video without the machine swapping. Two
+    // monitors enforce that:
+    //   1. Idle unload — after `modelIdleUnloadSeconds` (tier-scaled, see
+    //      `HardwareTier.Tunables`) without an inference request, every
+    //      context is unloaded. The next request transparently reloads
+    //      (~5-15 s warmup), which is the right trade for a doc app.
+    //   2. Memory pressure — when macOS signals warning/critical pressure,
+    //      contexts are released immediately so the system can breathe.
+    private var lastActivity = Date()
+    private var idleMonitorTask: Task<Void, Never>?
+    private var memoryPressureSource: DispatchSourceMemoryPressure?
+
     init(modelManager: ModelManager) {
         self.modelManager = modelManager
+        startSystemHeadroomMonitors()
+    }
+
+    private func startSystemHeadroomMonitors() {
+        let source = DispatchSource.makeMemoryPressureSource(
+            eventMask: [.warning, .critical],
+            queue: .global(qos: .utility)
+        )
+        source.setEventHandler { [weak self] in
+            guard let self else { return }
+            Task { await self.releaseAllModelMemory() }
+        }
+        source.resume()
+        memoryPressureSource = source
+
+        idleMonitorTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(60))
+                guard let self else { return }
+                if self.lock.withLock({ self.isShuttingDown }) { return }
+                let configured = UserDefaults.standard.double(forKey: "modelIdleUnloadSeconds")
+                let limit = configured > 0 ? configured : 600
+                let (idle, hasLoaded) = self.lock.withLock {
+                    (Date().timeIntervalSince(self.lastActivity),
+                     !self.contexts.isEmpty || self.visionContext != nil)
+                }
+                if hasLoaded && idle >= limit {
+                    await self.releaseAllModelMemory()
+                }
+            }
+        }
+    }
+
+    /// Stamp "a request just happened" for the idle monitor.
+    private func touchActivity() {
+        lock.withLock { lastActivity = Date() }
     }
 
     /// Mark every loaded context as needing a fresh reload with the
@@ -336,6 +388,7 @@ final class LocalLLMService: LLMServiceProtocol, @unchecked Sendable {
         guard !lock.withLock({ isShuttingDown }) else {
             throw CancellationError()
         }
+        touchActivity()
 
         // Lazy-reload hook: same as `contextForRole(_:)`. Drop any stale
         // vision context (and any sibling text contexts) so the load
@@ -402,6 +455,10 @@ final class LocalLLMService: LLMServiceProtocol, @unchecked Sendable {
                     for try await token in stream {
                         continuation.yield(token)
                     }
+                    // A long chat stream can outlast the idle window;
+                    // re-stamp at the end so the model isn't unloaded
+                    // moments after answering.
+                    self.touchActivity()
                     continuation.finish()
                 } catch {
                     continuation.finish(throwing: error)
@@ -439,6 +496,13 @@ final class LocalLLMService: LLMServiceProtocol, @unchecked Sendable {
     // MARK: - Context Management
 
     func shutdownForAppTermination() async {
+        // Stop the headroom monitors first — there is nothing left for
+        // them to manage, and the idle task must not outlive the service.
+        idleMonitorTask?.cancel()
+        idleMonitorTask = nil
+        memoryPressureSource?.cancel()
+        memoryPressureSource = nil
+
         let snapshot = lock.withLock { () -> (contexts: [LlamaContext], visionContext: LlamaVisionContext?, visionLoadTask: Task<Void, Error>?, streamTasks: [Task<Void, Never>]) in
             isShuttingDown = true
             hasStaleConfigs = false
@@ -504,7 +568,20 @@ final class LocalLLMService: LLMServiceProtocol, @unchecked Sendable {
             return true
         }
         guard shouldPurge else { return }
+        await unloadAllCachedContexts()
+    }
 
+    /// Release every loaded model from memory without entering the
+    /// terminal shutdown state. Safe to call any time: in-flight work
+    /// finishes first (actor serialization + stream waiters), and the
+    /// next request transparently reloads. Called by the idle monitor,
+    /// the memory-pressure source, and the last-window-close hook.
+    func releaseAllModelMemory() async {
+        guard !lock.withLock({ isShuttingDown }) else { return }
+        await unloadAllCachedContexts()
+    }
+
+    private func unloadAllCachedContexts() async {
         // Snapshot unique context references (tagger + chat can share a
         // single LlamaContext when they resolve to the same file).
         // Dedupe so we don't await unload on the same actor twice.
@@ -542,6 +619,7 @@ final class LocalLLMService: LLMServiceProtocol, @unchecked Sendable {
         guard !lock.withLock({ isShuttingDown }) else {
             throw CancellationError()
         }
+        touchActivity()
 
         // Lazy-reload hook: if any tier-driven config (n_ctx, GPU layers,
         // threads) has changed since this context was loaded, drop every

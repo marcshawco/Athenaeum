@@ -184,6 +184,38 @@ actor TranscriptionService {
         try await exporter.export()
     }
 
+    // MARK: - Active process registry
+    //
+    // whisper-cli runs as a *child process*, and macOS does not kill
+    // children when the parent quits — without this registry, quitting
+    // ATHENS mid-transcription would leave whisper-cli burning CPU in
+    // the background indefinitely. `AppLifecycleDelegate` calls
+    // `terminateActiveProcesses()` from `applicationShouldTerminate`.
+    nonisolated private static let processLock = NSLock()
+    nonisolated(unsafe) private static var activeProcesses: [Process] = []
+
+    nonisolated private static func register(_ process: Process) {
+        processLock.lock(); defer { processLock.unlock() }
+        activeProcesses.append(process)
+    }
+
+    nonisolated private static func unregister(_ process: Process) {
+        processLock.lock(); defer { processLock.unlock() }
+        activeProcesses.removeAll { $0 === process }
+    }
+
+    /// Terminate every running whisper-cli child. Safe to call from any
+    /// context; idempotent.
+    nonisolated static func terminateActiveProcesses() {
+        processLock.lock()
+        let processes = activeProcesses
+        activeProcesses.removeAll()
+        processLock.unlock()
+        for process in processes where process.isRunning {
+            process.terminate()
+        }
+    }
+
     // MARK: - Whisper
 
     private func runWhisper(cli: URL, model: URL, audio: URL, outputBase: URL) async throws {
@@ -201,8 +233,23 @@ actor TranscriptionService {
         process.standardError = stderr
         process.standardOutput = Pipe()
 
-        try process.run()
-        process.waitUntilExit()
+        Self.register(process)
+        defer { Self.unregister(process) }
+
+        // Await exit via terminationHandler instead of `waitUntilExit()`,
+        // which parked a cooperative-pool thread for the entire (possibly
+        // minutes-long) transcription run.
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            process.terminationHandler = { _ in
+                continuation.resume()
+            }
+            do {
+                try process.run()
+            } catch {
+                process.terminationHandler = nil
+                continuation.resume(throwing: error)
+            }
+        }
 
         guard process.terminationStatus == 0 else {
             let data = stderr.fileHandleForReading.readDataToEndOfFile()

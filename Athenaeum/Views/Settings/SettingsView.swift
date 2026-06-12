@@ -624,7 +624,7 @@ struct SettingsView: View {
                     Text("Hardware Tier")
                         .font(.system(size: 16, weight: .medium, design: .serif))
                         .foregroundStyle(Japandi.Colors.textPrimaryFB)
-                    Text("Auto: \(HardwareProfiler.detected.displayName) · \(String(format: "%.0f GB unified memory", HardwareProfiler.totalMemoryGB))")
+                    Text("For This Mac: \(HardwareProfiler.detected.displayName) · \(String(format: "%.0f GB unified memory", HardwareProfiler.totalMemoryGB))")
                         .font(Japandi.Typography.caption)
                         .foregroundStyle(Japandi.Colors.textTertiaryFB)
                 }
@@ -632,7 +632,7 @@ struct SettingsView: View {
             }
 
             Picker("Tier", selection: $hardwareTierOverride) {
-                Text("Auto-detect").tag("auto")
+                Text("For This Mac (Recommended)").tag("auto")
                 Divider()
                 ForEach(HardwareTier.allCases, id: \.rawValue) { tier in
                     Text(tier.displayName).tag(tier.rawValue)
@@ -651,7 +651,7 @@ struct SettingsView: View {
                 NotificationCenter.default.post(name: .modelsDidChange, object: nil)
             }
 
-            Text("Drives both the model lineup AND the runtime shape: chunk size, retrieval top-K, prompt budgets, and the inference context window all adapt to the chosen tier. Indexing and retrieval changes take effect immediately; loaded models reload on your next chat turn (expect a 5–15 s warmup once).")
+            Text("Drives both the model lineup AND the runtime shape: chunk size, retrieval top-K, prompt budgets, CPU thread budget, and the inference context window all adapt to the chosen tier. \"For This Mac\" sizes everything to this machine while always leaving headroom — efficiency cores and one performance core stay free, and models automatically release their memory when idle, under system memory pressure, or when the last window closes. Indexing and retrieval changes take effect immediately; loaded models reload on your next chat turn (expect a 5–15 s warmup once).")
                 .font(Japandi.Typography.caption)
                 .foregroundStyle(Japandi.Colors.textTertiaryFB)
                 .fixedSize(horizontal: false, vertical: true)

@@ -102,8 +102,11 @@ struct LlamaInferenceConfig: Sendable {
     private static var configuredTaggerThreadCount: Int32 {
         let lowPower = UserDefaults.standard.bool(forKey: "lowPowerTagging")
         if !lowPower { return configuredThreadCount }
-        let physicalCores = max(1, ProcessInfo.processInfo.processorCount)
-        let halved = max(2, physicalCores / 2)
+        // Half of the already-headroom-aware budget (which is itself
+        // capped to P-cores minus one), never below 2. The old formula
+        // halved *total* core count, which on an M2 Air (4P+4E) still
+        // meant 4 threads — as many as the normal budget.
+        let halved = max(2, HardwareProfiler.recommendedInferenceThreads / 2)
         return Int32(halved)
     }
 }
@@ -154,7 +157,6 @@ actor LlamaContext {
 #if canImport(llama)
     private var model: OpaquePointer?
     private var ctx: OpaquePointer?
-    private var sampler: UnsafeMutablePointer<llama_sampler>?
 #endif
 
     init(descriptor: LLMModelDescriptor, modelPath: URL, config: LlamaInferenceConfig) {
@@ -185,18 +187,21 @@ actor LlamaContext {
         var didSucceed = false
         defer {
             if !didSucceed {
-                if let s = sampler { llama_sampler_free(s); sampler = nil }
-                if let c = ctx     { llama_free(c); ctx = nil }
+                if let c = ctx { llama_free(c); ctx = nil }
                 llama_model_free(loadedModel)
                 model = nil
             }
         }
         model = loadedModel
 
-        // Resolve thread count: 0 = auto (use available cores minus 2 for UI)
+        // Resolve thread count: 0 = auto. Auto means the tier-capped,
+        // P-core-aware budget from HardwareProfiler — never the full
+        // core count. Leaving E-cores and one P-core free is what keeps
+        // the rest of the Mac (browser, video playback) responsive
+        // while a model is working.
         let resolvedThreads: Int32 = config.nThreads > 0
             ? config.nThreads
-            : Int32(max(1, ProcessInfo.processInfo.processorCount - 2))
+            : Int32(HardwareProfiler.recommendedInferenceThreads)
 
         var ctxParams = llama_context_default_params()
         ctxParams.n_ctx           = UInt32(config.contextSize)
@@ -208,15 +213,11 @@ actor LlamaContext {
         }
         ctx = loadedCtx
 
-        let sparams = llama_sampler_chain_default_params()
-        guard let loadedSampler = llama_sampler_chain_init(sparams) else {
-            throw LlamaError.failedToLoad
-        }
-        sampler = loadedSampler
-        llama_sampler_chain_add(loadedSampler, llama_sampler_init_temp(config.temperature))
-        llama_sampler_chain_add(loadedSampler, llama_sampler_init_top_k(Int32(config.topK)))
-        llama_sampler_chain_add(loadedSampler, llama_sampler_init_top_p(config.topP, 1))
-        llama_sampler_chain_add(loadedSampler, llama_sampler_init_dist(config.seed))
+        // NOTE: the sampler chain is intentionally NOT built here. It is
+        // built per generation call from the effective config — tagger
+        // (temp 0.1) and chat (temp 0.7) share this context when they
+        // resolve to the same model file, so a load-time sampler would
+        // silently apply whichever role's sampling params loaded first.
         isLoaded = true
         didSucceed = true
 #else
@@ -234,10 +235,9 @@ actor LlamaContext {
             }
         }
 #if canImport(llama)
-        if let s = sampler { llama_sampler_free(s) }
-        if let c = ctx     { llama_free(c) }
-        if let m = model   { llama_model_free(m) }
-        sampler = nil; ctx = nil; model = nil
+        if let c = ctx   { llama_free(c) }
+        if let m = model { llama_model_free(m) }
+        ctx = nil; model = nil
 #endif
         isLoaded = false
     }
@@ -262,8 +262,10 @@ actor LlamaContext {
     func generate(prompt: String, config override: LlamaInferenceConfig? = nil) throws -> String {
         guard isLoaded else { throw LlamaError.modelNotLoaded }
 #if canImport(llama)
-        guard let ctx, let model, let sampler else { throw LlamaError.modelNotLoaded }
+        guard let ctx, let model else { throw LlamaError.modelNotLoaded }
         let cfg = override ?? config
+        guard let sampler = Self.makeSampler(cfg) else { throw LlamaError.failedToLoad }
+        defer { llama_sampler_free(sampler) }
         guard let vocab = llama_model_get_vocab(model) else { throw LlamaError.failedToLoad }
         llama_memory_clear(llama_get_memory(ctx), true)
 
@@ -298,11 +300,15 @@ actor LlamaContext {
     ) -> AsyncThrowingStream<String, Error> {
         AsyncThrowingStream { continuation in
 #if canImport(llama)
-            guard isLoaded, let ctx = self.ctx, let model = self.model, let sampler = self.sampler else {
+            guard isLoaded, let ctx = self.ctx, let model = self.model else {
                 continuation.finish(throwing: LlamaError.modelNotLoaded)
                 return
             }
             let cfg = override ?? self.config
+            guard let sampler = Self.makeSampler(cfg) else {
+                continuation.finish(throwing: LlamaError.failedToLoad)
+                return
+            }
             let prompt = self.chatTemplate(messages)
             guard let vocab = llama_model_get_vocab(model) else {
                 continuation.finish(throwing: LlamaError.failedToLoad)
@@ -316,8 +322,10 @@ actor LlamaContext {
 
             let task = Task { [weak self] in
                 defer {
-                    // Decrement happens after the Task body finishes
-                    // (including normal exit, cancellation, throw).
+                    // Free the per-call sampler chain, then decrement.
+                    // Both happen after the Task body finishes (including
+                    // normal exit, cancellation, throw).
+                    llama_sampler_free(sampler)
                     Task { [weak self] in await self?.endStreamGeneration() }
                 }
                 do {
@@ -409,6 +417,22 @@ actor LlamaContext {
     // actor isolation (which would require `await` and break the
     // `inout llama_batch` parameter pattern).
 #if canImport(llama)
+    /// Build a sampler chain for one generation call. Cheap to construct
+    /// (microseconds, no allocations near model scale), so building it
+    /// per call is the right trade — it guarantees the temperature /
+    /// top-k / top-p that arrive with each request are the ones actually
+    /// applied, even when multiple roles share this context. Caller must
+    /// `llama_sampler_free` the result.
+    static func makeSampler(_ cfg: LlamaInferenceConfig) -> UnsafeMutablePointer<llama_sampler>? {
+        let sparams = llama_sampler_chain_default_params()
+        guard let chain = llama_sampler_chain_init(sparams) else { return nil }
+        llama_sampler_chain_add(chain, llama_sampler_init_temp(cfg.temperature))
+        llama_sampler_chain_add(chain, llama_sampler_init_top_k(Int32(cfg.topK)))
+        llama_sampler_chain_add(chain, llama_sampler_init_top_p(cfg.topP, 1))
+        llama_sampler_chain_add(chain, llama_sampler_init_dist(cfg.seed))
+        return chain
+    }
+
     static func tokenize(_ text: String, vocab: OpaquePointer) -> [llama_token] {
         let n = Int32(text.utf8.count) + 16
         var tokens = [llama_token](repeating: 0, count: Int(n))
